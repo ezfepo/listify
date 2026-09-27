@@ -188,9 +188,9 @@ Dark, dense, keyboard-first. Three panes:
 
 ### Phase 2 — Auth
 
-- [ ] `/auth/login` → PKCE → `/auth/callback` → store tokens in `settings`.
-- [ ] Auto-refresh; on failure return 401 `reconnect_required`.
-- [ ] `/api/me` → display name. UI: Connect / Connected as X.
+- [X] `/auth/login` → PKCE → `/auth/callback` → store tokens in `settings`.
+- [X] Auto-refresh; on failure return 401 `reconnect_required`.
+- [X] `/api/me` → display name. UI: Connect / Connected as X.
 
 - **Checkpoint:** login works end to end at `http://127.0.0.1:5173`. Commit.
 
