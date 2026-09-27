@@ -9,4 +9,15 @@ export default tseslint.config(
   {
     ignores: ['**/dist/**', '**/node_modules/**', 'data/**'],
   },
+  {
+    // Plain Node scripts and config files: not covered by the TS parser, so
+    // no-undef needs Node's globals spelled out explicitly.
+    files: ['scripts/**/*.mjs', '*.js', '*.mjs', '**/vitest.config.ts', '**/vitest.setup.ts'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+      },
+    },
+  },
 );
