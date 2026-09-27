@@ -8,6 +8,20 @@ type MeState =
   | { status: 'disconnected' }
   | { status: 'error'; message: string };
 
+type PlaylistOption = {
+  id: string;
+  name: string;
+  ownerDisplayName: string | null;
+  trackCount: number;
+};
+
+type PullSummary = {
+  mainTrackCount: number;
+  archiveTrackCount: number;
+  subPlaylists: { name: string; trackCount: number }[];
+  skippedEpisodes: number;
+};
+
 function readAuthError(): string | null {
   const params = new URLSearchParams(window.location.search);
   const error = params.get('auth_error');
@@ -15,6 +29,133 @@ function readAuthError(): string | null {
     window.history.replaceState({}, '', window.location.pathname);
   }
   return error;
+}
+
+function SetupAndPull() {
+  const [playlists, setPlaylists] = useState<PlaylistOption[] | null>(null);
+  const [mainId, setMainId] = useState('');
+  const [archiveId, setArchiveId] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [pullResult, setPullResult] = useState<PullSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/playlists').then((res) => res.json()),
+      fetch('/api/setup').then((res) => res.json()),
+    ])
+      .then(([playlistList, setup]: [PlaylistOption[], { mainSpotifyId: string | null; archiveSpotifyId: string | null }]) => {
+        setPlaylists(playlistList);
+        if (setup.mainSpotifyId) setMainId(setup.mainSpotifyId);
+        if (setup.archiveSpotifyId) setArchiveId(setup.archiveSpotifyId);
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+  }, []);
+
+  async function saveSetup() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mainSpotifyId: mainId, archiveSpotifyId: archiveId, adopt: [] }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runPull() {
+    setBusy(true);
+    setError(null);
+    setPullResult(null);
+    try {
+      const res = await fetch('/api/sync/pull', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
+      setPullResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!playlists) {
+    return <p className="text-zinc-400 text-sm">Loading playlists…</p>;
+  }
+
+  return (
+    <div className="space-y-3 text-sm text-left w-80">
+      <label className="block">
+        <span className="text-zinc-400">Main</span>
+        <select
+          className="mt-1 w-full rounded bg-zinc-900 border border-zinc-700 px-2 py-1"
+          value={mainId}
+          onChange={(e) => setMainId(e.target.value)}
+        >
+          <option value="">Choose a playlist…</option>
+          {playlists.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} ({p.trackCount})
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-zinc-400">Archive</span>
+        <select
+          className="mt-1 w-full rounded bg-zinc-900 border border-zinc-700 px-2 py-1"
+          value={archiveId}
+          onChange={(e) => setArchiveId(e.target.value)}
+        >
+          <option value="">Choose a playlist…</option>
+          {playlists.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} ({p.trackCount})
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="flex gap-2">
+        <button
+          disabled={!mainId || !archiveId || busy}
+          onClick={saveSetup}
+          className="rounded bg-zinc-700 px-3 py-1 disabled:opacity-40"
+        >
+          Save
+        </button>
+        <button
+          disabled={!saved || busy}
+          onClick={runPull}
+          className="rounded bg-green-600 px-3 py-1 disabled:opacity-40"
+        >
+          Pull
+        </button>
+      </div>
+      {error && <p className="text-red-400">{error}</p>}
+      {pullResult && (
+        <div className="text-green-400">
+          <p>Main: {pullResult.mainTrackCount} tracks</p>
+          <p>Archive: {pullResult.archiveTrackCount} tracks</p>
+          {pullResult.subPlaylists.map((s) => (
+            <p key={s.name}>
+              {s.name}: {s.trackCount} tracks
+            </p>
+          ))}
+          {pullResult.skippedEpisodes > 0 && (
+            <p className="text-zinc-400">Skipped {pullResult.skippedEpisodes} episode(s)</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function App() {
@@ -57,7 +198,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center gap-6 py-10">
       <div className="text-center space-y-4">
         <h1 className="text-2xl font-semibold">Listify</h1>
         <div className="space-y-2">
@@ -86,6 +227,8 @@ export default function App() {
           {me.status === 'error' && <p className="text-red-400">API error: {me.message}</p>}
         </div>
       </div>
+
+      {me.status === 'connected' && <SetupAndPull />}
     </div>
   );
 }

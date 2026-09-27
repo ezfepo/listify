@@ -196,12 +196,12 @@ Dark, dense, keyboard-first. Three panes:
 
 ### Phase 3 — DB + Pull (read-only)
 
-- [ ] Migrations for the data model in §4.
-- [ ] Spotify client: `getMyPlaylists`, `getPlaylistItems` (paginated), zod schemas.
-- [ ] Setup screen: pick **Main** and **Archive** from the user's playlists.
-- [ ] `POST /api/sync/pull` implements step 1 of the sync engine.
+- [X] Migrations for the data model in §4.
+- [X] Spotify client: `getMyPlaylists`, `getPlaylistItems` (paginated), zod schemas.
+- [X] Setup screen: pick **Main** and **Archive** from the user's playlists.
+- [X] `POST /api/sync/pull` implements step 1 of the sync engine.
   Existing playlists the user owns can be "adopted" as sub-playlists.
-- [ ] Unit tests with recorded fixtures (no live calls in tests).
+- [X] Unit tests with recorded fixtures (no live calls in tests).
 
 - **Checkpoint:** track count in DB == track count in Spotify Main. Commit.
 
