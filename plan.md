@@ -205,6 +205,13 @@ Dark, dense, keyboard-first. Three panes:
 
 - **Checkpoint:** track count in DB == track count in Spotify Main. Commit.
 
+**Known gap, carried to Phase 4:** the adopt-sub-playlist mechanism
+(`POST /api/setup`'s `adopt` field, `pull()`'s handling of `kind='sub'`
+playlists) is implemented and unit-tested, but the web UI only exposes
+pickers for Main/Archive — there's no "adopt an existing playlist as a
+sub-playlist" UI yet. Add that alongside the playlist CRUD in Phase 4's
+three-pane layout.
+
 ### Phase 3b — Enrichment + suggestion engine
 
 - [ ] Add `external_ids.isrc` to the tracks table during Pull.
