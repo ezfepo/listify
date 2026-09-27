@@ -1,4 +1,4 @@
-import type { SpotifyPlaylistItemEntry } from '../spotify/schemas.js';
+import type { SpotifyPlaylistItemEntry, SpotifySavedTrackEntry } from '../spotify/schemas.js';
 import type { NormalizedTrack } from './types.js';
 
 /**
@@ -23,5 +23,29 @@ export function normalizeTrackEntry(entry: SpotifyPlaylistItemEntry): Normalized
     durationMs: item.duration_ms ?? null,
     addedAt: entry.added_at,
     isLocal: entry.is_local || Boolean(item.is_local),
+  };
+}
+
+/**
+ * Converts a raw GET /me/tracks ("Liked Songs") entry into a NormalizedTrack, or
+ * null for a removed track (`track` is null). No episode filtering needed — this
+ * endpoint never returns episodes (those have their own "saved episodes" endpoint).
+ */
+export function normalizeSavedTrackEntry(entry: SpotifySavedTrackEntry): NormalizedTrack | null {
+  const track = entry.track;
+  if (!track) return null;
+
+  const artists = (track.artists ?? []).map((a) => a.name).join(', ');
+  const imageUrl = track.album?.images?.[0]?.url ?? null;
+
+  return {
+    uri: track.uri,
+    name: track.name,
+    artists,
+    album: track.album?.name ?? null,
+    imageUrl,
+    durationMs: track.duration_ms ?? null,
+    addedAt: entry.added_at,
+    isLocal: Boolean(track.is_local),
   };
 }

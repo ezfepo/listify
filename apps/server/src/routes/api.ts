@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getValidAccessToken } from '../spotify/auth.js';
-import { SpotifyAuthError } from '../spotify/errors.js';
-import { meProfileSchema } from '../spotify/schemas.js';
+import { getMe } from '../spotify/client.js';
+import { SpotifyAuthError, SpotifyHttpError } from '../spotify/errors.js';
 
 export async function apiRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async () => {
@@ -19,19 +19,18 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       throw err;
     }
 
-    const res = await fetch('https://api.spotify.com/v1/me', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (res.status === 401) {
-      return reply.code(401).send({ error: 'reconnect_required' });
+    try {
+      const profile = await getMe(accessToken);
+      return { id: profile.id, displayName: profile.display_name };
+    } catch (err) {
+      if (err instanceof SpotifyHttpError) {
+        if (err.status === 401) {
+          return reply.code(401).send({ error: 'reconnect_required' });
+        }
+        app.log.error(err.message);
+        return reply.code(502).send({ error: 'spotify_error' });
+      }
+      throw err;
     }
-    if (!res.ok) {
-      app.log.error(`Spotify /me returned ${res.status}`);
-      return reply.code(502).send({ error: 'spotify_error' });
-    }
-
-    const profile = meProfileSchema.parse(await res.json());
-    return { id: profile.id, displayName: profile.display_name };
   });
 }

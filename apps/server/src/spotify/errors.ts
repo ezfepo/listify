@@ -14,3 +14,14 @@ export class SpotifyRateLimitError extends Error {
     this.name = 'SpotifyRateLimitError';
   }
 }
+
+/** A non-2xx, non-429 response from a direct (non-spotifyGet) Spotify API call. */
+export class SpotifyHttpError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'SpotifyHttpError';
+    this.status = status;
+  }
+}

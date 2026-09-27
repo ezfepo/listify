@@ -25,6 +25,7 @@ new songs.
 | Storage         | **`node:sqlite`** (built-in `DatabaseSync`) + JSON export/import                                                               | Songs shared between playlists = many-to-many. JSON gets painful; SQLite is still one file, no native module to compile. JSON export is the human-readable backup. |
 | Source of truth | **Local DB**. Spotify is a sync target.                                                                                            | Enables re-organizing any time, undo, dry-run.                                                                                                                     |
 | Song lifecycle  | **Option 2**: Main = inbox. After organizing, song is copied to `Main – Archive` and removed from Main.                         | Archive is the full pool for future criteria; Main only ever shows "what's new". Monthly 50 songs → drop into Main → Sync → they appear in Inbox.               |
+| Main source     | Main can be **either** a real playlist **or Liked Songs** (`GET`/`DELETE /me/tracks`), picked on the setup screen. Archive must always be a real playlist. | Liked Songs isn't a real playlist in the API (no ID, own endpoints, own scopes) but is a common place people actually keep their "everything" pool — worth supporting natively instead of forcing a manual copy into a real playlist first. |
 | Classification  | **Assisted**: external data (ReccoBeats audio features + Last.fm tags) → per-playlist suggestions → human confirms with one key. | Spotify removed audio-features from its API; third-party sources fill the gap. Human always has the final say.                                                     |
 | Playback        | Not a player. Only a "which song was this?" check:`Open in Spotify` link + optional play on active device.                             | User keeps listening in Spotify.                                                                                                                                   |
 | Auth            | Authorization Code + PKCE, no client secret                                                                                              | Personal app.                                                                                                                                                      |
@@ -47,7 +48,14 @@ Never trust training-data knowledge of this API.
 - Handle `429` with `Retry-After`; distinguish `reason: QUOTA_EXCEEDED`.
 - Refresh tokens now expire (~6 months) → on refresh failure, show "Reconnect".
 - Skip/flag `is_local` tracks and episodes (cannot be managed by URI).
-- Scopes: `playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public user-read-playback-state user-modify-playback-state`
+- Scopes: `playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public user-read-playback-state user-modify-playback-state user-library-read user-library-modify`
+- **Liked Songs is not a playlist.** No playlist ID; read via `GET /me/tracks`
+  (paged, but the track lives under `track`, not `item` — a different shape from
+  playlist items, and there's no `type`/episode field since this endpoint never
+  returns episodes). Removing a song from it (Phase 6+) is `DELETE /me/tracks`
+  with **track IDs** (not URIs), max **50** per call — not the playlist-items
+  rules (100 URIs). Needs `user-library-read`/`user-library-modify`, which the
+  playlist-\* scopes don't cover.
 
 ## 4. Architecture
 
@@ -84,6 +92,14 @@ operations(id, ts, batch_id, type, payload_json, status, error)
 settings(key PK, value)      -- tokens, main/archive ids
 ```
 
+`playlists.spotify_id` (and the `settings` key `main_playlist_spotify_id`) can
+hold the sentinel `"liked_songs"` instead of a real Spotify playlist ID, meaning
+Main is Liked Songs rather than a playlist (`server/src/spotify/liked-songs.ts`,
+`LIKED_SONGS_SENTINEL`/`isLikedSongs()`). Never treat it as a real ID when
+calling playlist endpoints — check `isLikedSongs()` first and branch to the
+`/me/tracks` client functions (`getSavedTracks`, `getSavedTracksTotal`, and —
+Phase 6+ — the saved-tracks removal call) instead.
+
 ### Enrichment + suggestions
 
 Providers live in `server/src/enrich/<provider>.ts` behind one interface
@@ -117,7 +133,9 @@ For her in the car → valence > 0.5, tags love/romantic/pop, speechiness < 0.2.
 ### Sync engine (the critical part)
 
 1. **Pull**: read Main, Archive, and every sub-playlist from Spotify → upsert.
-   New URIs in Main → `status='inbox'`. Dedupe by URI.
+   New URIs in Main → `status='inbox'`. Dedupe by URI. If Main is Liked Songs
+   (see Data model above), this step reads `GET /me/tracks` instead of
+   `GET /playlists/{id}/items` — same upsert/dedupe logic, different source.
 2. **Diff**: desired (DB) vs actual (Spotify) → list of operations.
 3. **Preview**: UI shows the diff ("+12 to Road, +30 to Archive, −30 from Main").
 4. **Apply**, strictly in this order, idempotent, logged in `operations`:
@@ -126,7 +144,9 @@ For her in the car → valence > 0.5, tags love/romantic/pop, speechiness < 0.2.
    c. add to sub-playlists
    d. add to Archive
    e. re-read Archive, **verify**
-   f. only then remove from Main (only URIs verified in Archive)
+   f. only then remove from Main (only URIs verified in Archive) — **if Main is
+      Liked Songs, this is `DELETE /me/tracks` with track IDs (chunked by 50),
+      not the playlist-items removal call (chunked by 100, URIs)**
 5. Any failure → stop, keep Main untouched, show the log.
 
 `DRY_RUN=true` env flag makes `apply()` log instead of write. Default ON until Phase 6.
@@ -201,6 +221,10 @@ Dark, dense, keyboard-first. Three panes:
 - [X] Setup screen: pick **Main** and **Archive** from the user's playlists.
 - [X] `POST /api/sync/pull` implements step 1 of the sync engine.
   Existing playlists the user owns can be "adopted" as sub-playlists.
+- [X] Main can be **Liked Songs** instead of a real playlist (`GET /me/tracks`,
+  `LIKED_SONGS_SENTINEL`) — appears as an option in the setup screen's Main
+  picker; rejected if picked for Archive. Needs `user-library-read` — a user
+  who connected before this landed must reconnect for the new scope.
 - [X] Unit tests with recorded fixtures (no live calls in tests).
 
 - **Checkpoint:** track count in DB == track count in Spotify Main. Commit.
@@ -243,6 +267,9 @@ three-pane layout.
   shared songs, duplicates, local tracks, already-applied ops).
 - [ ] Diff Preview modal. `apply()` per §4 order, chunked by 100, backoff on 429,
   every op logged. With `DRY_RUN=true` only logs.
+- [ ] **If Main is Liked Songs** (`isLikedSongs()`), step 4.f's removal must call
+  `DELETE /me/tracks` with track IDs chunked by **50** — not the playlist-items
+  removal endpoint (URIs, chunked by 100). Cover both paths in `apply()`'s tests.
 - [ ] JSON snapshot + `Export JSON` / `Import JSON` of the whole DB.
 
 - **Checkpoint:** human reviews dry-run log for a real batch. Commit.

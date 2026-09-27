@@ -16,6 +16,9 @@ export const SPOTIFY_SCOPES = [
   'playlist-modify-public',
   'user-read-playback-state',
   'user-modify-playback-state',
+  // Liked Songs (GET/DELETE /me/tracks) isn't covered by the playlist-* scopes above.
+  'user-library-read',
+  'user-library-modify',
 ].join(' ');
 
 export const config = {

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SpotifyPlaylistItemEntry, SpotifySimplifiedPlaylist } from '../spotify/schemas.js';
+import type {
+  SpotifyPlaylistItemEntry,
+  SpotifySavedTrackEntry,
+  SpotifySimplifiedPlaylist,
+} from '../spotify/schemas.js';
 
 const FIXTURE_PLAYLISTS: SpotifySimplifiedPlaylist[] = [
   { id: 'main123', name: 'Main', owner: { id: 'me', display_name: 'Me' }, items: { total: 2 } },
@@ -88,6 +92,21 @@ const FIXTURE_ITEMS: Record<string, SpotifyPlaylistItemEntry[]> = {
   ],
 };
 
+const FIXTURE_SAVED_TRACKS: SpotifySavedTrackEntry[] = [
+  {
+    added_at: '2026-01-10T00:00:00Z',
+    track: {
+      uri: 'spotify:track:9',
+      id: '9',
+      name: 'Liked Song',
+      duration_ms: 190000,
+      is_local: false,
+      artists: [{ name: 'Artist Z' }],
+      album: { name: 'Album Z' },
+    },
+  },
+];
+
 vi.mock('../spotify/auth.js', () => ({
   getValidAccessToken: vi.fn(async () => 'fake-token'),
 }));
@@ -95,6 +114,7 @@ vi.mock('../spotify/auth.js', () => ({
 vi.mock('../spotify/client.js', () => ({
   getMyPlaylists: vi.fn(async () => FIXTURE_PLAYLISTS),
   getPlaylistItems: vi.fn(async (_token: string, playlistId: string) => FIXTURE_ITEMS[playlistId] ?? []),
+  getSavedTracks: vi.fn(async () => FIXTURE_SAVED_TRACKS),
 }));
 
 const { db } = await import('../db/index.js');
@@ -102,6 +122,7 @@ const { setSetting } = await import('../db/settings.js');
 const { upsertPlaylist } = await import('../db/playlists.js');
 const { pull, PullSetupError } = await import('./pull.js');
 const { getPlaylistItems } = await import('../spotify/client.js');
+const { LIKED_SONGS_SENTINEL } = await import('../spotify/liked-songs.js');
 
 beforeEach(() => {
   db.exec('DELETE FROM playlist_tracks; DELETE FROM tracks; DELETE FROM playlists; DELETE FROM settings;');
@@ -171,5 +192,24 @@ describe('pull', () => {
       in_main: number;
     };
     expect(row.in_main).toBe(0);
+  });
+
+  it('reads Main from Liked Songs (GET /me/tracks) when configured', async () => {
+    setSetting('main_playlist_spotify_id', LIKED_SONGS_SENTINEL);
+    setSetting('archive_playlist_spotify_id', 'archive456');
+
+    const summary = await pull();
+
+    expect(summary.mainTrackCount).toBe(1);
+    const track = db.prepare('SELECT status, name FROM tracks WHERE uri = ?').get('spotify:track:9') as {
+      status: string;
+      name: string;
+    };
+    expect(track).toEqual({ status: 'inbox', name: 'Liked Song' });
+
+    const playlistRow = db
+      .prepare('SELECT name, kind FROM playlists WHERE spotify_id = ?')
+      .get(LIKED_SONGS_SENTINEL) as { name: string; kind: string };
+    expect(playlistRow).toEqual({ name: 'Liked Songs', kind: 'main' });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { SpotifyPlaylistItemEntry } from '../spotify/schemas.js';
-import { normalizeTrackEntry } from './normalize.js';
+import type { SpotifyPlaylistItemEntry, SpotifySavedTrackEntry } from '../spotify/schemas.js';
+import { normalizeSavedTrackEntry, normalizeTrackEntry } from './normalize.js';
 
 function trackEntry(overrides: Partial<SpotifyPlaylistItemEntry> = {}): SpotifyPlaylistItemEntry {
   return {
@@ -84,5 +84,57 @@ describe('normalizeTrackEntry', () => {
     expect(track?.album).toBeNull();
     expect(track?.imageUrl).toBeNull();
     expect(track?.artists).toBe('');
+  });
+});
+
+function savedTrackEntry(
+  overrides: Partial<SpotifySavedTrackEntry> = {},
+): SpotifySavedTrackEntry {
+  return {
+    added_at: '2026-01-01T00:00:00Z',
+    track: {
+      uri: 'spotify:track:1',
+      id: '1',
+      name: 'Song One',
+      duration_ms: 200000,
+      is_local: false,
+      artists: [{ name: 'Artist A' }],
+      album: { name: 'Album A', images: [{ url: 'https://img/large.jpg' }] },
+    },
+    ...overrides,
+  };
+}
+
+describe('normalizeSavedTrackEntry', () => {
+  it('normalizes a Liked Songs entry', () => {
+    const track = normalizeSavedTrackEntry(savedTrackEntry());
+    expect(track).toEqual({
+      uri: 'spotify:track:1',
+      name: 'Song One',
+      artists: 'Artist A',
+      album: 'Album A',
+      imageUrl: 'https://img/large.jpg',
+      durationMs: 200000,
+      addedAt: '2026-01-01T00:00:00Z',
+      isLocal: false,
+    });
+  });
+
+  it('skips a removed track (track is null)', () => {
+    expect(normalizeSavedTrackEntry(savedTrackEntry({ track: null }))).toBeNull();
+  });
+
+  it('keeps local tracks but flags them', () => {
+    const entry = savedTrackEntry({
+      track: {
+        uri: 'spotify:local:artist:album:song:123',
+        id: null,
+        name: 'Local Song',
+        is_local: true,
+        artists: [{ name: 'Local Artist' }],
+      },
+    });
+    const track = normalizeSavedTrackEntry(entry);
+    expect(track?.isLocal).toBe(true);
   });
 });

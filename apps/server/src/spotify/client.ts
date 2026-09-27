@@ -1,8 +1,12 @@
-import { SpotifyRateLimitError } from './errors.js';
+import { SpotifyHttpError, SpotifyRateLimitError } from './errors.js';
 import {
+  meProfileSchema,
   playlistItemsPageSchema,
   playlistsPageSchema,
+  savedTracksPageSchema,
+  type SpotifyMeProfile,
   type SpotifyPlaylistItemEntry,
+  type SpotifySavedTrackEntry,
   type SpotifySimplifiedPlaylist,
 } from './schemas.js';
 
@@ -45,6 +49,17 @@ async function spotifyGet(accessToken: string, url: string): Promise<unknown> {
   }
 }
 
+/** The current user's profile. Throws SpotifyHttpError(status) on a non-2xx response. */
+export async function getMe(accessToken: string): Promise<SpotifyMeProfile> {
+  const res = await fetch(`${API_BASE}/me`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new SpotifyHttpError(res.status, `GET /me returned ${res.status}`);
+  }
+  return meProfileSchema.parse(await res.json());
+}
+
 /** All playlists owned or followed by the current user (paginated). */
 export async function getMyPlaylists(accessToken: string): Promise<SpotifySimplifiedPlaylist[]> {
   const playlists: SpotifySimplifiedPlaylist[] = [];
@@ -78,4 +93,24 @@ export async function getPlaylistItems(
   }
 
   return entries;
+}
+
+/** All of the current user's saved tracks ("Liked Songs"), paginated. */
+export async function getSavedTracks(accessToken: string): Promise<SpotifySavedTrackEntry[]> {
+  const entries: SpotifySavedTrackEntry[] = [];
+  let url: string | null = `${API_BASE}/me/tracks?limit=${PAGE_LIMIT}`;
+
+  while (url) {
+    const page = savedTracksPageSchema.parse(await spotifyGet(accessToken, url));
+    entries.push(...page.items);
+    url = page.next;
+  }
+
+  return entries;
+}
+
+/** Just the total count of saved tracks, without paginating through all of them. */
+export async function getSavedTracksTotal(accessToken: string): Promise<number> {
+  const page = savedTracksPageSchema.parse(await spotifyGet(accessToken, `${API_BASE}/me/tracks?limit=1`));
+  return page.total;
 }

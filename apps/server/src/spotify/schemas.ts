@@ -77,3 +77,35 @@ const playlistItemEntrySchema = z
 export type SpotifyPlaylistItemEntry = z.infer<typeof playlistItemEntrySchema>;
 
 export const playlistItemsPageSchema = pagedSchema(playlistItemEntrySchema);
+
+// GET /me/tracks ("Liked Songs"): a different endpoint family from playlist items,
+// with its own shape — the track lives under `track`, not `item`, there's no
+// top-level `is_local` (only nested), and there's no `type` discriminant since this
+// endpoint never returns episodes (those have their own "saved episodes" endpoint).
+const savedTrackObjectSchema = z
+  .object({
+    uri: z.string(),
+    id: z.string().nullable(),
+    name: z.string(),
+    duration_ms: z.number().optional(),
+    is_local: z.boolean().optional().default(false),
+    artists: z.array(z.object({ name: z.string() })).optional(),
+    album: z
+      .object({
+        name: z.string().optional(),
+        images: z.array(z.object({ url: z.string() })).optional(),
+      })
+      .optional(),
+  })
+  .passthrough();
+
+const savedTrackEntrySchema = z
+  .object({
+    added_at: z.string(),
+    track: savedTrackObjectSchema.nullable(),
+  })
+  .passthrough();
+
+export type SpotifySavedTrackEntry = z.infer<typeof savedTrackEntrySchema>;
+
+export const savedTracksPageSchema = pagedSchema(savedTrackEntrySchema);
