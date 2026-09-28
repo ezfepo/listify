@@ -88,6 +88,7 @@ export interface TrackEnrichmentView {
   name: string;
   artists: string;
   album: string | null;
+  imageUrl: string | null;
   isrc: string | null;
   status: string;
   inMain: boolean;
@@ -95,6 +96,7 @@ export interface TrackEnrichmentView {
   features: Record<string, number | null> | null;
   tags: { tag: string; weight: number; source: string }[];
   enrichment: { source: string; status: EnrichmentOutcome; ts: string }[];
+  playlists: { id: number; name: string }[];
 }
 
 interface TrackRow {
@@ -102,6 +104,7 @@ interface TrackRow {
   name: string;
   artists: string;
   album: string | null;
+  image_url: string | null;
   isrc: string | null;
   status: string;
   in_main: number;
@@ -132,11 +135,21 @@ function toTrackView(row: TrackRow): TrackEnrichmentView {
     .prepare('SELECT source, status, ts FROM enrichment_status WHERE track_uri = ? ORDER BY source')
     .all(row.uri) as { source: string; status: EnrichmentOutcome; ts: string }[];
 
+  const playlists = db
+    .prepare(
+      `SELECT p.id, p.name FROM playlist_tracks pt
+       JOIN playlists p ON p.id = pt.playlist_id
+       WHERE pt.track_uri = ?
+       ORDER BY p.name`,
+    )
+    .all(row.uri) as { id: number; name: string }[];
+
   return {
     uri: row.uri,
     name: row.name,
     artists: row.artists,
     album: row.album,
+    imageUrl: row.image_url,
     isrc: row.isrc,
     status: row.status,
     inMain: Boolean(row.in_main),
@@ -144,6 +157,7 @@ function toTrackView(row: TrackRow): TrackEnrichmentView {
     features: featuresRow ?? null,
     tags,
     enrichment,
+    playlists,
   };
 }
 
@@ -151,7 +165,7 @@ function toTrackView(row: TrackRow): TrackEnrichmentView {
 export function getTrackForReview(uri: string): TrackEnrichmentView | undefined {
   const row = db
     .prepare(
-      'SELECT uri, name, artists, album, isrc, status, in_main, in_archive FROM tracks WHERE uri = ?',
+      'SELECT uri, name, artists, album, image_url, isrc, status, in_main, in_archive FROM tracks WHERE uri = ?',
     )
     .get(uri) as TrackRow | undefined;
   return row ? toTrackView(row) : undefined;
@@ -162,6 +176,7 @@ export interface ListTracksOptions {
   offset: number;
   /** Matches against name or artists, case-insensitive substring. */
   search?: string;
+  status?: 'inbox' | 'organized' | 'skipped';
 }
 
 export interface ListTracksResult {
@@ -169,26 +184,37 @@ export interface ListTracksResult {
   items: TrackEnrichmentView[];
 }
 
-/** Browsable, paginated track list with each track's features/tags/enrichment status — for spot-checking coverage (Phase 3b checkpoint). */
+/** Browsable, paginated track list with each track's features/tags/enrichment/playlist chips — backs both the Phase 3b review endpoint and Phase 4's center track table. */
 export function listTracksForReview(options: ListTracksOptions): ListTracksResult {
   const pattern = options.search ? `%${options.search}%` : null;
+  const status = options.status ?? null;
 
   const totalRow = db
     .prepare(
       `SELECT COUNT(*) AS count FROM tracks
-       WHERE (? IS NULL OR name LIKE ? OR artists LIKE ?)`,
+       WHERE (? IS NULL OR name LIKE ? OR artists LIKE ?)
+         AND (? IS NULL OR status = ?)`,
     )
-    .get(pattern, pattern, pattern) as { count: number };
+    .get(pattern, pattern, pattern, status, status) as { count: number };
 
   const rows = db
     .prepare(
-      `SELECT uri, name, artists, album, isrc, status, in_main, in_archive
+      `SELECT uri, name, artists, album, image_url, isrc, status, in_main, in_archive
        FROM tracks
        WHERE (? IS NULL OR name LIKE ? OR artists LIKE ?)
+         AND (? IS NULL OR status = ?)
        ORDER BY first_seen_at DESC
        LIMIT ? OFFSET ?`,
     )
-    .all(pattern, pattern, pattern, options.limit, options.offset) as unknown as TrackRow[];
+    .all(
+      pattern,
+      pattern,
+      pattern,
+      status,
+      status,
+      options.limit,
+      options.offset,
+    ) as unknown as TrackRow[];
 
   return { total: totalRow.count, items: rows.map(toTrackView) };
 }

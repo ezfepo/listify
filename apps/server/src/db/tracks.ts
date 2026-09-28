@@ -1,4 +1,5 @@
 import { db } from './index.js';
+import { listPlaylistIdsForTrack, unassignTrackFromPlaylist } from './playlists.js';
 import './schema.js';
 import type { NormalizedTrack } from '../sync/types.js';
 
@@ -68,4 +69,87 @@ export function countTracksInArchive(): number {
     count: number;
   };
   return row.count;
+}
+
+export type TrackStatus = 'inbox' | 'organized' | 'skipped';
+
+export interface TrackRow {
+  uri: string;
+  name: string;
+  artists: string;
+  album: string | null;
+  image_url: string | null;
+  duration_ms: number | null;
+  added_at: string | null;
+  status: TrackStatus;
+  in_main: number;
+  in_archive: number;
+  is_local: number;
+  isrc: string | null;
+}
+
+export function getTrack(uri: string): TrackRow | undefined {
+  return db.prepare('SELECT * FROM tracks WHERE uri = ?').get(uri) as TrackRow | undefined;
+}
+
+export function getTrackStatus(uri: string): TrackStatus | undefined {
+  const row = db.prepare('SELECT status FROM tracks WHERE uri = ?').get(uri) as
+    { status: TrackStatus } | undefined;
+  return row?.status;
+}
+
+export function setTrackStatus(uri: string, status: TrackStatus): void {
+  db.prepare('UPDATE tracks SET status = ? WHERE uri = ?').run(status, uri);
+}
+
+/**
+ * Skipping a track removes it from every sub-playlist it's in — a skipped song
+ * shouldn't keep sitting in a playlist it was organized into — then marks it
+ * skipped. Returns the playlist IDs it was removed from, so a caller can offer
+ * undo (re-assign to those same playlists + restore the previous status).
+ */
+export function skipTrack(uri: string): number[] {
+  const playlistIds = listPlaylistIdsForTrack(uri);
+  for (const playlistId of playlistIds) {
+    unassignTrackFromPlaylist(playlistId, uri);
+  }
+  setTrackStatus(uri, 'skipped');
+  return playlistIds;
+}
+
+/**
+ * Assign/unassign call this after changing a track's sub-playlist memberships, to
+ * keep `status` in sync. Assigning to a playlist is a deliberate action, so it
+ * always wins over a prior 'skipped' — otherwise a skipped track could never be
+ * organized again. Only the *no playlists left* case preserves an explicit skip,
+ * so an unassign never silently resurrects a skipped track back to 'inbox'.
+ */
+export function recomputeStatusFromAssignments(uri: string, assignedToAnyPlaylist: boolean): void {
+  if (assignedToAnyPlaylist) {
+    setTrackStatus(uri, 'organized');
+    return;
+  }
+  if (getTrackStatus(uri) === 'skipped') return;
+  setTrackStatus(uri, 'inbox');
+}
+
+export function getStatusCounts(): Record<TrackStatus, number> {
+  const rows = db.prepare('SELECT status, COUNT(*) AS count FROM tracks GROUP BY status').all() as {
+    status: TrackStatus;
+    count: number;
+  }[];
+  const counts: Record<TrackStatus, number> = { inbox: 0, organized: 0, skipped: 0 };
+  for (const row of rows) counts[row.status] = row.count;
+  return counts;
+}
+
+/** Tracks not yet assigned to any sub-playlist — the candidate pool for suggestions/auto-sort. Excludes 'skipped'. */
+export function listUnassignedCandidateTracks(): TrackRow[] {
+  return db
+    .prepare(
+      `SELECT t.* FROM tracks t
+       WHERE t.status != 'skipped'
+         AND NOT EXISTS (SELECT 1 FROM playlist_tracks pt WHERE pt.track_uri = t.uri)`,
+    )
+    .all() as unknown as TrackRow[];
 }

@@ -116,3 +116,19 @@ export async function getSavedTracksTotal(accessToken: string): Promise<number> 
   );
   return page.total;
 }
+
+/**
+ * Starts playback of a single track on the user's active device (Premium only).
+ * Throws SpotifyHttpError(404) when there's no active device — callers should
+ * treat that as "nothing to play", not a real failure (plan.md: optional feature).
+ */
+export async function playTrack(accessToken: string, trackUri: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/me/player/play`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uris: [trackUri] }),
+  });
+  if (!res.ok) {
+    throw new SpotifyHttpError(res.status, `PUT /me/player/play returned ${res.status}`);
+  }
+}

@@ -250,16 +250,18 @@ three-pane layout.
 
 ### Phase 4 — Organizer UI
 
-- [ ] Read the `frontend-design` skill first if available. Build the three-pane
-  layout from §4, virtualized list, playlist CRUD (local only), assign /
-  unassign, multi-select bulk assign, search + filters.
-- [ ] Triage mode + all keyboard shortcuts + undo stack.
-- [ ] Recipe editor per playlist (tag chips + range sliders), suggestion chips
+- [X] No `frontend-design` skill was available in this session. Built the
+  three-pane layout from §4, virtualized list (`@tanstack/react-virtual`),
+  playlist CRUD (local only — no Spotify calls), assign/unassign,
+  multi-select bulk assign, search + filters.
+- [X] Triage mode + all keyboard shortcuts + undo stack.
+- [X] Recipe editor per playlist (tag chips + range sliders), suggestion chips
   with reasons, Auto-sort view, feature columns sortable in the table.
-- [ ] "Which song is this?": `Open in Spotify` deep link (`spotify:track:…`).
+- [X] "Which song is this?": `Open in Spotify` deep link (`spotify:track:…`).
   Optional: `PUT /me/player/play` on the active device. No in-app player.
 
-- **Checkpoint:** human organizes ~20 real songs, reports friction. Fix. Commit.
+- **Checkpoint (not yet done — needs a human):** organize ~20 real songs,
+  report friction. Fix. Commit.
 
 ### Phase 5 — Diff + Apply (DRY_RUN)
 
