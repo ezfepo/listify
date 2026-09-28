@@ -7,7 +7,12 @@ import {
   getPlaylistById,
   unassignTrackFromPlaylist,
 } from '../db/playlists.js';
-import { getTrack, recomputeStatusFromAssignments, setTrackStatus } from '../db/tracks.js';
+import {
+  getTrack,
+  recomputeStatusFromAssignments,
+  setTrackStatus,
+  skipTrack,
+} from '../db/tracks.js';
 import { suggestPlaylistsForTrack } from '../enrich/suggest.js';
 import { getValidAccessToken } from '../spotify/auth.js';
 import { playTrack } from '../spotify/client.js';
@@ -115,6 +120,10 @@ export async function trackRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: 'invalid_body', details: body.error.issues });
     }
 
+    if (body.data.status === 'skipped') {
+      const removedFromPlaylistIds = skipTrack(uri);
+      return { removedFromPlaylistIds };
+    }
     setTrackStatus(uri, body.data.status);
     return reply.code(204).send();
   });

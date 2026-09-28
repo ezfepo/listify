@@ -157,11 +157,16 @@ export const api = {
       body: JSON.stringify({ playlistId }),
     }),
 
+  // Setting status to 'skipped' also removes the track from every playlist it was
+  // in (see db/tracks.ts skipTrack) — the response carries which ones, for undo.
   setTrackStatus: (uri: string, status: TrackStatus) =>
-    request<void>(`/api/tracks/${encodeURIComponent(uri)}/status`, {
-      method: 'POST',
-      body: JSON.stringify({ status }),
-    }),
+    request<{ removedFromPlaylistIds?: number[] } | void>(
+      `/api/tracks/${encodeURIComponent(uri)}/status`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ status }),
+      },
+    ),
 
   bulkAssign: (uris: string[], playlistId: number) =>
     request<void>('/api/tracks/bulk/assign', {

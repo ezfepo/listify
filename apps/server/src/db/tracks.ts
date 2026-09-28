@@ -1,4 +1,5 @@
 import { db } from './index.js';
+import { listPlaylistIdsForTrack, unassignTrackFromPlaylist } from './playlists.js';
 import './schema.js';
 import type { NormalizedTrack } from '../sync/types.js';
 
@@ -99,6 +100,21 @@ export function getTrackStatus(uri: string): TrackStatus | undefined {
 
 export function setTrackStatus(uri: string, status: TrackStatus): void {
   db.prepare('UPDATE tracks SET status = ? WHERE uri = ?').run(status, uri);
+}
+
+/**
+ * Skipping a track removes it from every sub-playlist it's in — a skipped song
+ * shouldn't keep sitting in a playlist it was organized into — then marks it
+ * skipped. Returns the playlist IDs it was removed from, so a caller can offer
+ * undo (re-assign to those same playlists + restore the previous status).
+ */
+export function skipTrack(uri: string): number[] {
+  const playlistIds = listPlaylistIdsForTrack(uri);
+  for (const playlistId of playlistIds) {
+    unassignTrackFromPlaylist(playlistId, uri);
+  }
+  setTrackStatus(uri, 'skipped');
+  return playlistIds;
 }
 
 /**

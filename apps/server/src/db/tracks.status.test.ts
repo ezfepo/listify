@@ -3,6 +3,7 @@ import { db } from './index.js';
 import {
   assignTrackToPlaylist,
   createSubPlaylist,
+  listPlaylistIdsForTrack,
   unassignTrackFromPlaylist,
 } from './playlists.js';
 import {
@@ -11,6 +12,7 @@ import {
   listUnassignedCandidateTracks,
   recomputeStatusFromAssignments,
   setTrackStatus,
+  skipTrack,
   upsertTrack,
 } from './tracks.js';
 
@@ -59,6 +61,28 @@ describe('recomputeStatusFromAssignments', () => {
     setTrackStatus('spotify:track:1', 'skipped');
 
     recomputeStatusFromAssignments('spotify:track:1', false);
+    expect(getTrackStatus('spotify:track:1')).toBe('skipped');
+  });
+});
+
+describe('skipTrack', () => {
+  it('removes the track from every playlist it was in, marks it skipped, and returns the removed playlist ids', () => {
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    const sad = createSubPlaylist({ name: 'Sad' });
+    const road = createSubPlaylist({ name: 'Road' });
+    assignTrackToPlaylist(sad.id, 'spotify:track:1');
+    assignTrackToPlaylist(road.id, 'spotify:track:1');
+
+    const removed = skipTrack('spotify:track:1');
+
+    expect(removed.sort()).toEqual([sad.id, road.id].sort());
+    expect(listPlaylistIdsForTrack('spotify:track:1')).toEqual([]);
+    expect(getTrackStatus('spotify:track:1')).toBe('skipped');
+  });
+
+  it('returns an empty array for a track that had no playlists', () => {
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    expect(skipTrack('spotify:track:1')).toEqual([]);
     expect(getTrackStatus('spotify:track:1')).toBe('skipped');
   });
 });

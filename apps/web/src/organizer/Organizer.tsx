@@ -179,11 +179,17 @@ export function Organizer() {
     async (uri: string, status: TrackStatus) => {
       const previous = [...trackList, ...inboxList].find((t) => t.uri === uri)?.status ?? 'inbox';
       try {
-        await api.setTrackStatus(uri, status);
+        // Skipping removes the track from every playlist it was in (see db/tracks.ts
+        // skipTrack) — the response says which ones, so undo can put them back.
+        const result = await api.setTrackStatus(uri, status);
+        const removedFromPlaylistIds = result?.removedFromPlaylistIds ?? [];
         invalidateAll();
         pushUndo({
           label: `Mark ${status}`,
           undo: async () => {
+            for (const playlistId of removedFromPlaylistIds) {
+              await api.assignTrack(uri, playlistId);
+            }
             await api.setTrackStatus(uri, previous);
             invalidateAll();
           },
