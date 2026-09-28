@@ -23,7 +23,6 @@ interface CenterTableProps {
   search: string;
   onSearchChange: (value: string) => void;
   playlists: PlaylistView[];
-  selectedPlaylistId: number | null;
   onAssign: (uri: string, playlistId: number) => void;
   onUnassign: (uri: string, playlistId: number) => void;
   onBulkAssign: (uris: string[], playlistId: number) => void;
@@ -43,7 +42,6 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
     search,
     onSearchChange,
     playlists,
-    selectedPlaylistId,
     onAssign,
     onUnassign,
     onBulkAssign,
@@ -54,6 +52,7 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
   searchInputRef,
 ) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>(null);
+  const [bulkTargetId, setBulkTargetId] = useState<number | null>(null);
   const subPlaylists = playlists.filter((p) => p.kind === 'sub');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -104,13 +103,29 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
         {selection.size > 0 && (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-zinc-400">{selection.size} selected</span>
-            <button
-              disabled={!selectedPlaylistId}
-              onClick={() => selectedPlaylistId && onBulkAssign([...selection], selectedPlaylistId)}
-              className="rounded bg-green-600 px-2 py-1 disabled:opacity-40"
-              title={selectedPlaylistId ? undefined : 'Select a playlist in the left pane first'}
+            <select
+              value={bulkTargetId ?? ''}
+              onChange={(e) => setBulkTargetId(e.target.value ? Number(e.target.value) : null)}
+              className="rounded bg-zinc-900 px-2 py-1 text-xs"
             >
-              Assign to selected playlist
+              <option value="">Assign to…</option>
+              {subPlaylists.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={!bulkTargetId}
+              onClick={() => {
+                if (!bulkTargetId) return;
+                onBulkAssign([...selection], bulkTargetId);
+                setBulkTargetId(null);
+              }}
+              className="rounded bg-green-600 px-2 py-1 disabled:opacity-40"
+              title={bulkTargetId ? undefined : 'Pick a playlist first'}
+            >
+              Assign
             </button>
             <button
               onClick={() => {

@@ -324,7 +324,6 @@ export function Organizer() {
         search={search}
         onSearchChange={setSearch}
         playlists={playlists}
-        selectedPlaylistId={selectedSubPlaylist?.id ?? null}
         onAssign={doAssign}
         onUnassign={doUnassign}
         onBulkAssign={doBulkAssign}
@@ -392,7 +391,7 @@ export function Organizer() {
         </div>
       )}
       {topLabel && (
-        <div className="fixed bottom-4 left-4 rounded bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 shadow-lg">
+        <div className="fixed top-20 right-4 rounded bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 shadow-lg">
           Last action: {topLabel} (press u to undo)
         </div>
       )}

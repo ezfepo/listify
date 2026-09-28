@@ -102,7 +102,11 @@ export function RecipeEditor({ playlistId, playlistName, onClose }: RecipeEditor
   function setRange(key: FeatureKey, index: 0 | 1, value: number) {
     setFeatureRanges((prev) => {
       const current = prev[key] ?? FEATURE_BOUNDS[key];
-      const next: [number, number] = index === 0 ? [value, current[1]] : [current[0], value];
+      // Clamp so the two thumbs can never cross — dragging min past max pushes max along, and vice versa.
+      const next: [number, number] =
+        index === 0
+          ? [Math.min(value, current[1]), current[1]]
+          : [current[0], Math.max(value, current[0])];
       return { ...prev, [key]: next };
     });
   }
@@ -114,7 +118,7 @@ export function RecipeEditor({ playlistId, playlistName, onClose }: RecipeEditor
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[80vh] w-[32rem] overflow-y-auto rounded-lg bg-zinc-900 p-4 text-sm shadow-xl"
+        className="max-h-[85vh] w-[40rem] max-w-[95vw] overflow-y-auto rounded-lg bg-zinc-900 p-5 text-sm shadow-xl"
       >
         <h2 className="mb-3 text-lg font-semibold">Recipe: {playlistName}</h2>
 
@@ -141,17 +145,25 @@ export function RecipeEditor({ playlistId, playlistName, onClose }: RecipeEditor
             const [min, max] = featureRanges[key] ?? FEATURE_BOUNDS[key];
             const [lo, hi] = FEATURE_BOUNDS[key];
             return (
-              <div key={key} className="flex items-center gap-2">
-                <label className="flex w-32 shrink-0 items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={enabled}
-                    onChange={(e) => toggleFeature(key, e.target.checked)}
-                  />
-                  <span>{key}</span>
-                </label>
+              <div key={key} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={(e) => toggleFeature(key, e.target.checked)}
+                    />
+                    <span>{key}</span>
+                  </label>
+                  {enabled && (
+                    <span className="text-xs text-zinc-400">
+                      {min.toFixed(2)} – {max.toFixed(2)}
+                    </span>
+                  )}
+                </div>
                 {enabled && (
-                  <>
+                  <div className="flex items-center gap-2 pl-5">
+                    <span className="w-8 shrink-0 text-right text-xs text-zinc-500">min</span>
                     <input
                       type="range"
                       min={lo}
@@ -161,6 +173,7 @@ export function RecipeEditor({ playlistId, playlistName, onClose }: RecipeEditor
                       onChange={(e) => setRange(key, 0, Number(e.target.value))}
                       className="flex-1"
                     />
+                    <span className="w-8 shrink-0 text-xs text-zinc-500">max</span>
                     <input
                       type="range"
                       min={lo}
@@ -170,15 +183,18 @@ export function RecipeEditor({ playlistId, playlistName, onClose }: RecipeEditor
                       onChange={(e) => setRange(key, 1, Number(e.target.value))}
                       className="flex-1"
                     />
-                    <span className="w-24 shrink-0 text-right text-xs text-zinc-400">
-                      {min.toFixed(2)} – {max.toFixed(2)}
-                    </span>
-                  </>
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
+
+        {save.isError && (
+          <p className="mt-2 text-xs text-red-400">
+            Could not save — check the ranges and try again.
+          </p>
+        )}
 
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded bg-zinc-700 px-3 py-1">
