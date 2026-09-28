@@ -162,6 +162,7 @@ export default function App() {
   const [health, setHealth] = useState<HealthState>({ status: 'loading' });
   const [me, setMe] = useState<MeState>({ status: 'loading' });
   const [authError] = useState<string | null>(() => readAuthError());
+  const [disconnecting, setDisconnecting] = useState(false);
 
   useEffect(() => {
     fetch('/api/health')
@@ -197,6 +198,19 @@ export default function App() {
       );
   }, []);
 
+  async function disconnect() {
+    setDisconnecting(true);
+    try {
+      const res = await fetch('/auth/disconnect', { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setMe({ status: 'disconnected' });
+    } catch (err) {
+      setMe({ status: 'error', message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center gap-6 py-10">
       <div className="text-center space-y-4">
@@ -214,7 +228,16 @@ export default function App() {
         <div>
           {me.status === 'loading' && <p className="text-zinc-400">Checking Spotify connection…</p>}
           {me.status === 'connected' && (
-            <p className="text-green-400">Connected as {me.displayName}</p>
+            <div className="flex items-center justify-center gap-3">
+              <p className="text-green-400">Connected as {me.displayName}</p>
+              <button
+                onClick={disconnect}
+                disabled={disconnecting}
+                className="rounded bg-zinc-700 px-3 py-1 text-sm disabled:opacity-40"
+              >
+                {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+              </button>
+            </div>
           )}
           {me.status === 'disconnected' && (
             <a
