@@ -260,8 +260,11 @@ three-pane layout.
 - [X] "Which song is this?": `Open in Spotify` deep link (`spotify:track:…`).
   Optional: `PUT /me/player/play` on the active device. No in-app player.
 
-- **Checkpoint (not yet done — needs a human):** organize ~20 real songs,
-  report friction. Fix. Commit.
+- [X] **Checkpoint:** human organized real songs across several sessions,
+  reporting friction each time — search losing focus, panels overflowing the
+  viewport, undo toast overlapping other UI, bulk-assign requiring leaving
+  Inbox view, skipped tracks stuck out of sync with playlist membership. All
+  fixed and verified against the real running app. Commit.
 
 ### Phase 5 — Diff + Apply (DRY_RUN)
 
