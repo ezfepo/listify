@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
-import { beginAuthorization, exchangeCodeForToken, storeTokens, takePendingAuth } from '../spotify/auth.js';
+import {
+  beginAuthorization,
+  clearTokens,
+  exchangeCodeForToken,
+  storeTokens,
+  takePendingAuth,
+} from '../spotify/auth.js';
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.get('/auth/login', async (_req, reply) => {
@@ -35,5 +41,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     return reply.redirect(config.webOrigin);
+  });
+
+  app.post('/auth/disconnect', async (_req, reply) => {
+    clearTokens();
+    return reply.code(204).send();
   });
 }
