@@ -52,10 +52,13 @@ Never trust training-data knowledge of this API.
 - **Liked Songs is not a playlist.** No playlist ID; read via `GET /me/tracks`
   (paged, but the track lives under `track`, not `item` — a different shape from
   playlist items, and there's no `type`/episode field since this endpoint never
-  returns episodes). Removing a song from it (Phase 6+) is `DELETE /me/tracks`
-  with **track IDs** (not URIs), max **50** per call — not the playlist-items
-  rules (100 URIs). Needs `user-library-read`/`user-library-modify`, which the
-  playlist-\* scopes don't cover.
+  returns episodes). Removing a song from it is `DELETE /me/library` with
+  **Spotify URIs** (not track IDs), max **40** per call — not the playlist-items
+  rules (100 URIs), and not the deprecated `DELETE /me/tracks` (IDs, max 50)
+  this doc originally specified; corrected against live docs in Phase 5 (Sep
+  2026) — re-verify before relying on this again. Needs
+  `user-library-read`/`user-library-modify`, which the playlist-\* scopes don't
+  cover.
 
 ## 4. Architecture
 
@@ -145,8 +148,9 @@ For her in the car → valence > 0.5, tags love/romantic/pop, speechiness < 0.2.
    d. add to Archive
    e. re-read Archive, **verify**
    f. only then remove from Main (only URIs verified in Archive) — **if Main is
-      Liked Songs, this is `DELETE /me/tracks` with track IDs (chunked by 50),
-      not the playlist-items removal call (chunked by 100, URIs)**
+      Liked Songs, this is `DELETE /me/library` with Spotify URIs (chunked by 40),
+      not the playlist-items removal call (chunked by 100, URIs), and not the
+      deprecated `DELETE /me/tracks` (IDs, chunked by 50)**
 5. Any failure → stop, keep Main untouched, show the log.
 
 `DRY_RUN=true` env flag makes `apply()` log instead of write. Default ON until Phase 6.
@@ -268,16 +272,19 @@ three-pane layout.
 
 ### Phase 5 — Diff + Apply (DRY_RUN)
 
-- [ ] `diff()` as a pure function + thorough unit tests (adds, removes,
+- [x] `diff()` as a pure function + thorough unit tests (adds, removes,
   shared songs, duplicates, local tracks, already-applied ops).
-- [ ] Diff Preview modal. `apply()` per §4 order, chunked by 100, backoff on 429,
+- [x] Diff Preview modal. `apply()` per §4 order, chunked by 100, backoff on 429,
   every op logged. With `DRY_RUN=true` only logs.
-- [ ] **If Main is Liked Songs** (`isLikedSongs()`), step 4.f's removal must call
-  `DELETE /me/tracks` with track IDs chunked by **50** — not the playlist-items
-  removal endpoint (URIs, chunked by 100). Cover both paths in `apply()`'s tests.
-- [ ] JSON snapshot + `Export JSON` / `Import JSON` of the whole DB.
+- [x] **If Main is Liked Songs** (`isLikedSongs()`), step 4.f's removal must call
+  `DELETE /me/library` with Spotify URIs chunked by **40** — not the
+  playlist-items removal endpoint (URIs, chunked by 100), and not the deprecated
+  `DELETE /me/tracks` (IDs, chunked by 50). Cover both paths in `apply()`'s tests.
+- [x] JSON snapshot + `Export JSON` / `Import JSON` of the whole DB.
 
-- **Checkpoint:** human reviews dry-run log for a real batch. Commit.
+- **Checkpoint (not yet done — needs a human):** review the dry-run log for a
+  real batch (Sync tab → Preview Diff / Apply with `DRY_RUN=true`) and confirm
+  it looks right. Commit once confirmed.
 
 ### Phase 6 — Go live, carefully
 

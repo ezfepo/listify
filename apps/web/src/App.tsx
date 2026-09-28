@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Organizer } from './organizer/Organizer';
+import { SyncPanel } from './organizer/SyncPanel';
 import { UndoIndicatorDisplay, UndoIndicatorProvider } from './organizer/UndoIndicator';
 
 type HealthState = { status: 'loading' } | { status: 'ok' } | { status: 'error'; message: string };
@@ -171,7 +172,7 @@ export default function App() {
   const [me, setMe] = useState<MeState>({ status: 'loading' });
   const [authError] = useState<string | null>(() => readAuthError());
   const [disconnecting, setDisconnecting] = useState(false);
-  const [view, setView] = useState<'setup' | 'organize'>('setup');
+  const [view, setView] = useState<'setup' | 'organize' | 'sync'>('setup');
 
   useEffect(() => {
     fetch('/api/health')
@@ -274,6 +275,12 @@ export default function App() {
             >
               Organize
             </button>
+            <button
+              onClick={() => setView('sync')}
+              className={`rounded px-3 py-1 text-sm ${view === 'sync' ? 'bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-900'}`}
+            >
+              Sync
+            </button>
           </nav>
           <UndoIndicatorDisplay />
           <div className="ml-auto flex items-center gap-3 text-sm">
@@ -300,6 +307,7 @@ export default function App() {
           </div>
         )}
         {view === 'organize' && <Organizer />}
+        {view === 'sync' && <SyncPanel />}
       </div>
     </UndoIndicatorProvider>
   );

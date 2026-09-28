@@ -30,7 +30,10 @@ mood/context playlists, using only songs already in Main. Full plan in
 - Create playlist via `POST /me/playlists`.
 - No batch `GET /tracks?ids=`, no `popularity`, no audio-features or
   recommendations endpoints — get metadata from playlist-items responses.
-- Max 100 URIs per add/remove call (chunk); paginate reads.
+- Max 100 URIs per playlist add/remove call (chunk); paginate reads.
+- Liked Songs removal: `DELETE /me/tracks` (track IDs, max 50) is deprecated —
+  use `DELETE /me/library` (Spotify URIs, max **40**) instead. Verified against
+  live docs Sep 2026; re-check before relying on this again.
 - Handle `429` + `Retry-After`; distinguish `reason: QUOTA_EXCEEDED`.
 - Refresh tokens expire (~6 months) — on refresh failure, surface "Reconnect".
 - Skip/flag `is_local` tracks and episodes.

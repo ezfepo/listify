@@ -133,6 +133,20 @@ export function recomputeStatusFromAssignments(uri: string, assignedToAnyPlaylis
   setTrackStatus(uri, 'inbox');
 }
 
+/** URIs of every organized (assigned) track that isn't a local file — see sync/diff.ts. */
+export function listOrganizedTrackUris(): string[] {
+  const rows = db
+    .prepare("SELECT uri FROM tracks WHERE status = 'organized' AND is_local = 0")
+    .all() as { uri: string }[];
+  return rows.map((r) => r.uri);
+}
+
+/** URIs of every local-file track — excluded from every sync op (can't be managed by URI). */
+export function listLocalTrackUris(): string[] {
+  const rows = db.prepare('SELECT uri FROM tracks WHERE is_local = 1').all() as { uri: string }[];
+  return rows.map((r) => r.uri);
+}
+
 export function getStatusCounts(): Record<TrackStatus, number> {
   const rows = db.prepare('SELECT status, COUNT(*) AS count FROM tracks GROUP BY status').all() as {
     status: TrackStatus;

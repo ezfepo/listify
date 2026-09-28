@@ -193,6 +193,32 @@ export const api = {
 
   playTrack: (uri: string) =>
     request<void>(`/api/tracks/${encodeURIComponent(uri)}/play`, { method: 'POST' }),
+
+  getSyncDiff: () => request<DiffPreview>('/api/sync/diff'),
+
+  applySync: () => request<ApplySummary>('/api/sync/apply', { method: 'POST' }),
+
+  importSnapshot: (snapshot: unknown) =>
+    request<void>('/api/import', { method: 'POST', body: JSON.stringify(snapshot) }),
 };
+
+export type DiffOperation =
+  | { kind: 'createPlaylist'; playlistId: number; name: string }
+  | { kind: 'addToPlaylist'; playlistId: number; uris: string[] }
+  | { kind: 'addToArchive'; uris: string[] }
+  | { kind: 'removeFromMain'; uris: string[] };
+
+export interface DiffPreview {
+  operations: DiffOperation[];
+  skippedLocalUris: string[];
+}
+
+export interface ApplySummary {
+  dryRun: boolean;
+  batchId: string;
+  backupPath: string;
+  operations: { operation: DiffOperation; status: 'dry_run' | 'done' | 'failed'; error?: string }[];
+  skippedLocalUris: string[];
+}
 
 export { ApiError };

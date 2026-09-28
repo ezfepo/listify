@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { apiRoutes } from './routes/api.js';
 import { authRoutes } from './routes/auth.js';
 import { enrichRoutes } from './routes/enrich.js';
+import { exportRoutes } from './routes/export.js';
 import { libraryRoutes } from './routes/library.js';
 import { recipeRoutes } from './routes/recipes.js';
 import { setupRoutes } from './routes/setup.js';
@@ -21,6 +22,7 @@ await app.register(enrichRoutes);
 await app.register(libraryRoutes);
 await app.register(recipeRoutes);
 await app.register(trackRoutes);
+await app.register(exportRoutes);
 
 app.listen({ port: PORT, host: HOST }).catch((err) => {
   app.log.error(err);

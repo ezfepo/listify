@@ -216,3 +216,16 @@ export function countPlaylistsForTrack(trackUri: string): number {
     .get(trackUri) as { count: number };
   return row.count;
 }
+
+/** Desired (locally organized) membership of a sub-playlist — see sync/diff.ts. */
+export function listTrackUrisForPlaylist(playlistId: number): string[] {
+  const rows = db
+    .prepare('SELECT track_uri FROM playlist_tracks WHERE playlist_id = ?')
+    .all(playlistId) as { track_uri: string }[];
+  return rows.map((r) => r.track_uri);
+}
+
+/** Sets a local sub-playlist's Spotify ID after apply() creates it on Spotify. */
+export function setPlaylistSpotifyId(id: number, spotifyId: string): void {
+  db.prepare('UPDATE playlists SET spotify_id = ? WHERE id = ?').run(spotifyId, id);
+}
