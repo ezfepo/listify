@@ -83,6 +83,116 @@ export function replaceTrackTags(trackUri: string, source: string, tags: TrackTa
   }
 }
 
+export interface TrackEnrichmentView {
+  uri: string;
+  name: string;
+  artists: string;
+  album: string | null;
+  isrc: string | null;
+  status: string;
+  inMain: boolean;
+  inArchive: boolean;
+  features: Record<string, number | null> | null;
+  tags: { tag: string; weight: number; source: string }[];
+  enrichment: { source: string; status: EnrichmentOutcome; ts: string }[];
+}
+
+interface TrackRow {
+  uri: string;
+  name: string;
+  artists: string;
+  album: string | null;
+  isrc: string | null;
+  status: string;
+  in_main: number;
+  in_archive: number;
+}
+
+const FEATURE_COLUMNS = [
+  'valence',
+  'energy',
+  'danceability',
+  'tempo',
+  'acousticness',
+  'instrumentalness',
+  'speechiness',
+  'loudness',
+] as const;
+
+function toTrackView(row: TrackRow): TrackEnrichmentView {
+  const featuresRow = db
+    .prepare(`SELECT ${FEATURE_COLUMNS.join(', ')} FROM track_features WHERE track_uri = ?`)
+    .get(row.uri) as Record<string, number | null> | undefined;
+
+  const tags = db
+    .prepare('SELECT tag, weight, source FROM track_tags WHERE track_uri = ? ORDER BY weight DESC')
+    .all(row.uri) as { tag: string; weight: number; source: string }[];
+
+  const enrichment = db
+    .prepare('SELECT source, status, ts FROM enrichment_status WHERE track_uri = ? ORDER BY source')
+    .all(row.uri) as { source: string; status: EnrichmentOutcome; ts: string }[];
+
+  return {
+    uri: row.uri,
+    name: row.name,
+    artists: row.artists,
+    album: row.album,
+    isrc: row.isrc,
+    status: row.status,
+    inMain: Boolean(row.in_main),
+    inArchive: Boolean(row.in_archive),
+    features: featuresRow ?? null,
+    tags,
+    enrichment,
+  };
+}
+
+/** A single track's row plus its features/tags/enrichment status, for spot-checking (Phase 3b checkpoint). */
+export function getTrackForReview(uri: string): TrackEnrichmentView | undefined {
+  const row = db
+    .prepare(
+      'SELECT uri, name, artists, album, isrc, status, in_main, in_archive FROM tracks WHERE uri = ?',
+    )
+    .get(uri) as TrackRow | undefined;
+  return row ? toTrackView(row) : undefined;
+}
+
+export interface ListTracksOptions {
+  limit: number;
+  offset: number;
+  /** Matches against name or artists, case-insensitive substring. */
+  search?: string;
+}
+
+export interface ListTracksResult {
+  total: number;
+  items: TrackEnrichmentView[];
+}
+
+/** Browsable, paginated track list with each track's features/tags/enrichment status — for spot-checking coverage (Phase 3b checkpoint). */
+export function listTracksForReview(options: ListTracksOptions): ListTracksResult {
+  const pattern = options.search ? `%${options.search}%` : null;
+
+  const totalRow = db
+    .prepare(
+      `SELECT COUNT(*) AS count FROM tracks
+       WHERE (? IS NULL OR name LIKE ? OR artists LIKE ?)`,
+    )
+    .get(pattern, pattern, pattern) as { count: number };
+
+  const rows = db
+    .prepare(
+      `SELECT uri, name, artists, album, isrc, status, in_main, in_archive
+       FROM tracks
+       WHERE (? IS NULL OR name LIKE ? OR artists LIKE ?)
+       ORDER BY first_seen_at DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(pattern, pattern, pattern, options.limit, options.offset) as unknown as TrackRow[];
+
+  return { total: totalRow.count, items: rows.map(toTrackView) };
+}
+
 export interface CoverageBySource {
   source: string;
   ok: number;
