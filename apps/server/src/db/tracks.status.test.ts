@@ -1,0 +1,80 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { db } from './index.js';
+import {
+  assignTrackToPlaylist,
+  createSubPlaylist,
+  unassignTrackFromPlaylist,
+} from './playlists.js';
+import {
+  getStatusCounts,
+  getTrackStatus,
+  listUnassignedCandidateTracks,
+  recomputeStatusFromAssignments,
+  setTrackStatus,
+  upsertTrack,
+} from './tracks.js';
+
+function track(uri: string) {
+  return {
+    uri,
+    name: 'Song',
+    artists: 'Artist',
+    album: null,
+    imageUrl: null,
+    durationMs: null,
+    addedAt: null,
+    isLocal: false,
+    isrc: null,
+  };
+}
+
+beforeEach(() => {
+  db.exec('DELETE FROM playlist_tracks; DELETE FROM playlists; DELETE FROM tracks;');
+});
+
+describe('recomputeStatusFromAssignments', () => {
+  it('flips inbox -> organized once assigned, and back to inbox once fully unassigned', () => {
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    const sub = createSubPlaylist({ name: 'Sad' });
+
+    assignTrackToPlaylist(sub.id, 'spotify:track:1');
+    recomputeStatusFromAssignments('spotify:track:1', true);
+    expect(getTrackStatus('spotify:track:1')).toBe('organized');
+
+    unassignTrackFromPlaylist(sub.id, 'spotify:track:1');
+    recomputeStatusFromAssignments('spotify:track:1', false);
+    expect(getTrackStatus('spotify:track:1')).toBe('inbox');
+  });
+
+  it('never overrides an explicit skip', () => {
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    setTrackStatus('spotify:track:1', 'skipped');
+
+    recomputeStatusFromAssignments('spotify:track:1', true);
+    expect(getTrackStatus('spotify:track:1')).toBe('skipped');
+  });
+});
+
+describe('getStatusCounts', () => {
+  it('counts tracks per status, defaulting missing statuses to 0', () => {
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    upsertTrack(track('spotify:track:2'), 'inbox');
+    setTrackStatus('spotify:track:2', 'organized');
+
+    expect(getStatusCounts()).toEqual({ inbox: 1, organized: 1, skipped: 0 });
+  });
+});
+
+describe('listUnassignedCandidateTracks', () => {
+  it('excludes tracks already in a sub-playlist and skipped tracks', () => {
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    upsertTrack(track('spotify:track:2'), 'inbox');
+    upsertTrack(track('spotify:track:3'), 'inbox');
+    const sub = createSubPlaylist({ name: 'Sad' });
+    assignTrackToPlaylist(sub.id, 'spotify:track:1');
+    setTrackStatus('spotify:track:2', 'skipped');
+
+    const candidates = listUnassignedCandidateTracks();
+    expect(candidates.map((t) => t.uri)).toEqual(['spotify:track:3']);
+  });
+});
