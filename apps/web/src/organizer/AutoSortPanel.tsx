@@ -25,7 +25,7 @@ export function AutoSortPanel({ playlistId, playlistName, onBulkAssign }: AutoSo
   }
 
   return (
-    <div className="flex h-full w-80 shrink-0 flex-col border-l border-zinc-800 p-3 text-sm">
+    <div className="flex min-h-0 w-80 flex-1 flex-col border-l border-zinc-800 p-3 text-sm">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="font-semibold">Auto-sort: {playlistName}</h3>
         <button

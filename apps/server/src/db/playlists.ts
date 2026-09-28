@@ -106,7 +106,11 @@ export function listPlaylistsWithCounts(): PlaylistWithCount[] {
   const rows = db
     .prepare(
       `SELECT p.id, p.spotify_id, p.name, p.kind, p.criteria_note, p.emoji, p.color, p.sort_order,
-              (SELECT COUNT(*) FROM playlist_tracks pt WHERE pt.playlist_id = p.id) AS track_count
+              CASE p.kind
+                WHEN 'main' THEN (SELECT COUNT(*) FROM tracks t WHERE t.in_main = 1)
+                WHEN 'archive' THEN (SELECT COUNT(*) FROM tracks t WHERE t.in_archive = 1)
+                ELSE (SELECT COUNT(*) FROM playlist_tracks pt WHERE pt.playlist_id = p.id)
+              END AS track_count
        FROM playlists p
        ORDER BY p.kind, p.sort_order, p.name`,
     )

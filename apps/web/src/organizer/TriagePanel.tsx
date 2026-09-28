@@ -85,14 +85,14 @@ export function TriagePanel({
 
   if (!track) {
     return (
-      <div className="flex h-full w-80 shrink-0 flex-col items-center justify-center border-l border-zinc-800 p-4 text-center text-sm text-zinc-500">
+      <div className="flex min-h-0 w-80 flex-1 flex-col items-center justify-center border-l border-zinc-800 p-4 text-center text-sm text-zinc-500">
         Inbox is empty — nothing left to triage.
       </div>
     );
   }
 
   return (
-    <div className="flex h-full w-80 shrink-0 flex-col gap-3 border-l border-zinc-800 p-4">
+    <div className="flex min-h-0 w-80 flex-1 flex-col gap-3 border-l border-zinc-800 p-4">
       <div className="text-center text-xs text-zinc-500">
         {queueLength} left in inbox · j/k to browse
       </div>

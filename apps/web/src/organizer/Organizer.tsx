@@ -9,6 +9,7 @@ import { TriagePanel, type TriageHotkeys } from './TriagePanel';
 import { useUndoStack } from './useUndoStack';
 
 type RightMode = 'triage' | 'autosort';
+type PlaylistSelection = number | 'main' | 'archive' | null;
 
 function isTypingTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
@@ -22,18 +23,25 @@ export function Organizer() {
   const [statusFilter, setStatusFilter] = useState<TrackStatus | null>(null);
   const [search, setSearch] = useState('');
   const [selection, setSelection] = useState<Set<string>>(new Set());
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<PlaylistSelection>(null);
   const [editingRecipeId, setEditingRecipeId] = useState<number | null>(null);
   const [rightMode, setRightMode] = useState<RightMode>('triage');
   const [triageIndex, setTriageIndex] = useState(0);
+  const [focusedTrackUri, setFocusedTrackUri] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const hotkeysRef = useRef<TriageHotkeys | null>(null);
 
   const library = useQuery({ queryKey: ['library'], queryFn: api.getLibrary });
   const tracks = useQuery({
-    queryKey: ['tracks', statusFilter, search],
-    queryFn: () => api.getTracks({ status: statusFilter ?? undefined, q: search || undefined }),
+    // Viewing a playlist shows its full contents regardless of status (a real
+    // playlist view), so the status filter only applies when no playlist is selected.
+    queryKey: ['tracks', selectedPlaylistId ? 'all' : statusFilter, search],
+    queryFn: () =>
+      api.getTracks({
+        status: selectedPlaylistId ? undefined : (statusFilter ?? undefined),
+        q: search || undefined,
+      }),
     // Keep showing the previous page's rows while a new search/filter is in flight,
     // instead of unmounting the table (and its focused search input) on every keystroke.
     placeholderData: (previous) => previous,
@@ -46,7 +54,21 @@ export function Organizer() {
   const playlists: PlaylistView[] = library.data?.playlists ?? [];
   const trackList = tracks.data?.items ?? [];
   const inboxList = inboxTracks.data?.items ?? [];
-  const currentTriageTrack = inboxList[Math.min(triageIndex, Math.max(inboxList.length - 1, 0))];
+
+  const displayedTracks = useMemo(() => {
+    if (selectedPlaylistId === 'main') return trackList.filter((t) => t.inMain);
+    if (selectedPlaylistId === 'archive') return trackList.filter((t) => t.inArchive);
+    if (typeof selectedPlaylistId === 'number') {
+      return trackList.filter((t) => t.playlists.some((p) => p.id === selectedPlaylistId));
+    }
+    return trackList;
+  }, [trackList, selectedPlaylistId]);
+
+  const focusedTrack = focusedTrackUri
+    ? [...trackList, ...inboxList].find((t) => t.uri === focusedTrackUri)
+    : undefined;
+  const currentTriageTrack =
+    focusedTrack ?? inboxList[Math.min(triageIndex, Math.max(inboxList.length - 1, 0))];
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -181,6 +203,21 @@ export function Organizer() {
     [invalidateAll, reportError, selectedPlaylistId],
   );
 
+  function handleStatusFilterChange(status: TrackStatus | null) {
+    setSelectedPlaylistId(null);
+    setStatusFilter(status);
+  }
+
+  function handleSelectPlaylist(id: PlaylistSelection) {
+    setStatusFilter(null);
+    setSelectedPlaylistId((prev) => (prev === id ? null : id));
+  }
+
+  function focusTrack(uri: string) {
+    setFocusedTrackUri(uri);
+    setRightMode('triage');
+  }
+
   function toggleSelect(uri: string) {
     setSelection((prev) => {
       const next = new Set(prev);
@@ -212,9 +249,11 @@ export function Organizer() {
 
       if (e.key === 'j') {
         e.preventDefault();
+        setFocusedTrackUri(null);
         setTriageIndex((i) => Math.min(i + 1, Math.max(inboxList.length - 1, 0)));
       } else if (e.key === 'k') {
         e.preventDefault();
+        setFocusedTrackUri(null);
         setTriageIndex((i) => Math.max(i - 1, 0));
       } else if (/^[1-9]$/.test(e.key)) {
         e.preventDefault();
@@ -230,11 +269,9 @@ export function Organizer() {
         hotkeys.play();
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        setTriageIndex(0);
         hotkeys.markDone();
       } else if (e.key === 's') {
         e.preventDefault();
-        setTriageIndex(0);
         hotkeys.skip();
       }
     }
@@ -250,8 +287,13 @@ export function Organizer() {
     () => playlists.find((p) => p.id === editingRecipeId),
     [editingRecipeId, playlists],
   );
-  const selectedPlaylist = useMemo(
-    () => playlists.find((p) => p.id === selectedPlaylistId),
+  // Only a real sub-playlist can be a bulk-assign target or have an Auto-sort view —
+  // Main/Archive are read-only browsing entries (see LeftPane).
+  const selectedSubPlaylist = useMemo(
+    () =>
+      typeof selectedPlaylistId === 'number'
+        ? playlists.find((p) => p.id === selectedPlaylistId && p.kind === 'sub')
+        : undefined,
     [playlists, selectedPlaylistId],
   );
 
@@ -264,10 +306,10 @@ export function Organizer() {
       <LeftPane
         statusCounts={library.data?.statusCounts ?? { inbox: 0, organized: 0, skipped: 0 }}
         statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
+        onStatusFilterChange={handleStatusFilterChange}
         playlists={playlists}
         selectedPlaylistId={selectedPlaylistId}
-        onSelectPlaylist={setSelectedPlaylistId}
+        onSelectPlaylist={handleSelectPlaylist}
         onCreatePlaylist={createPlaylist}
         onDeletePlaylist={deletePlaylist}
         onEditRecipe={setEditingRecipeId}
@@ -275,22 +317,23 @@ export function Organizer() {
 
       <CenterTable
         ref={searchInputRef}
-        tracks={trackList}
+        tracks={displayedTracks}
         selection={selection}
         onToggleSelect={toggleSelect}
         onClearSelection={() => setSelection(new Set())}
         search={search}
         onSearchChange={setSearch}
         playlists={playlists}
-        selectedPlaylistId={selectedPlaylistId}
+        selectedPlaylistId={selectedSubPlaylist?.id ?? null}
         onAssign={doAssign}
         onUnassign={doUnassign}
         onBulkAssign={doBulkAssign}
         onSetStatus={doSetStatus}
         onPlay={doPlay}
+        onFocusTrack={focusTrack}
       />
 
-      <div className="flex shrink-0 flex-col">
+      <div className="flex h-full min-h-0 shrink-0 flex-col">
         <div className="flex border-b border-zinc-800 text-xs">
           <button
             onClick={() => setRightMode('triage')}
@@ -300,7 +343,7 @@ export function Organizer() {
           </button>
           <button
             onClick={() => setRightMode('autosort')}
-            disabled={!selectedPlaylist}
+            disabled={!selectedSubPlaylist}
             className={`flex-1 px-3 py-2 disabled:opacity-40 ${rightMode === 'autosort' ? 'bg-zinc-800' : 'text-zinc-500'}`}
           >
             Auto-sort
@@ -313,16 +356,23 @@ export function Organizer() {
             queueLength={inboxList.length}
             playlists={playlists}
             onAssign={(uri, playlistId) => doAssign(uri, playlistId, false)}
-            onSkip={(uri) => doSetStatus(uri, 'skipped')}
-            onDone={() => {}}
+            onSkip={(uri) => {
+              doSetStatus(uri, 'skipped');
+              setFocusedTrackUri(null);
+              setTriageIndex(0);
+            }}
+            onDone={() => {
+              setFocusedTrackUri(null);
+              setTriageIndex(0);
+            }}
             onPlay={doPlay}
             registerHotkeys={registerHotkeys}
           />
         )}
-        {rightMode === 'autosort' && selectedPlaylist && (
+        {rightMode === 'autosort' && selectedSubPlaylist && (
           <AutoSortPanel
-            playlistId={selectedPlaylist.id}
-            playlistName={selectedPlaylist.name}
+            playlistId={selectedSubPlaylist.id}
+            playlistName={selectedSubPlaylist.name}
             onBulkAssign={doBulkAssign}
           />
         )}
@@ -342,7 +392,7 @@ export function Organizer() {
         </div>
       )}
       {topLabel && (
-        <div className="fixed bottom-4 right-4 rounded bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400">
+        <div className="fixed bottom-4 left-4 rounded bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 shadow-lg">
           Last action: {topLabel} (press u to undo)
         </div>
       )}

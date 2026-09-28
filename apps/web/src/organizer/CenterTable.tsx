@@ -4,6 +4,17 @@ import { FEATURE_KEYS, type FeatureKey, type PlaylistView, type TrackView } from
 
 type SortKey = FeatureKey | 'name';
 
+const FEATURE_ABBREVIATIONS: Record<FeatureKey, string> = {
+  valence: 'val',
+  energy: 'nrg',
+  danceability: 'dnc',
+  tempo: 'bpm',
+  acousticness: 'aco',
+  instrumentalness: 'ins',
+  speechiness: 'spc',
+  loudness: 'db',
+};
+
 interface CenterTableProps {
   tracks: TrackView[];
   selection: Set<string>;
@@ -18,6 +29,7 @@ interface CenterTableProps {
   onBulkAssign: (uris: string[], playlistId: number) => void;
   onSetStatus: (uri: string, status: 'inbox' | 'organized' | 'skipped') => void;
   onPlay: (uri: string) => void;
+  onFocusTrack: (uri: string) => void;
 }
 
 const ROW_HEIGHT = 44;
@@ -37,6 +49,7 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
     onBulkAssign,
     onSetStatus,
     onPlay,
+    onFocusTrack,
   },
   searchInputRef,
 ) {
@@ -115,21 +128,22 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
         )}
       </div>
 
-      <div className="flex gap-2 border-b border-zinc-800 px-2 py-1 text-xs text-zinc-400">
+      <div className="flex gap-1 border-b border-zinc-800 px-2 py-1 text-xs text-zinc-400">
         <button
-          className="w-48 shrink-0 text-left hover:text-white"
+          className="w-40 shrink-0 text-left hover:text-white"
           onClick={() => toggleSort('name')}
         >
           Title / Artist{sortIndicator('name')}
         </button>
-        <span className="w-40 shrink-0">Playlists</span>
-        {FEATURE_KEYS.slice(0, 4).map((key) => (
+        <span className="w-28 shrink-0">Playlists</span>
+        {FEATURE_KEYS.map((key) => (
           <button
             key={key}
-            className="w-20 shrink-0 text-left hover:text-white"
+            className="w-12 shrink-0 text-left hover:text-white"
+            title={key}
             onClick={() => toggleSort(key)}
           >
-            {key}
+            {FEATURE_ABBREVIATIONS[key]}
             {sortIndicator(key)}
           </button>
         ))}
@@ -152,7 +166,7 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
                   height: virtualRow.size,
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
-                className={`flex items-center gap-2 border-b border-zinc-900 px-2 text-sm ${
+                className={`flex items-center gap-1 border-b border-zinc-900 px-2 text-sm ${
                   selected ? 'bg-zinc-800' : 'hover:bg-zinc-900'
                 }`}
               >
@@ -162,11 +176,15 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
                   onChange={() => onToggleSelect(track.uri)}
                   className="shrink-0"
                 />
-                <div className="w-48 shrink-0 truncate">
+                <button
+                  onClick={() => onFocusTrack(track.uri)}
+                  title="View in Triage"
+                  className="w-40 shrink-0 truncate text-left hover:text-white"
+                >
                   <div className="truncate">{track.name}</div>
                   <div className="truncate text-xs text-zinc-500">{track.artists}</div>
-                </div>
-                <div className="flex w-40 shrink-0 flex-wrap gap-1">
+                </button>
+                <div className="flex w-28 shrink-0 flex-wrap gap-1">
                   {track.playlists.map((p) => (
                     <span
                       key={p.id}
@@ -178,8 +196,8 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
                     </span>
                   ))}
                 </div>
-                {FEATURE_KEYS.slice(0, 4).map((key) => (
-                  <span key={key} className="w-20 shrink-0 text-xs text-zinc-400">
+                {FEATURE_KEYS.map((key) => (
+                  <span key={key} className="w-12 shrink-0 truncate text-xs text-zinc-400">
                     {track.features?.[key] !== undefined ? track.features[key]!.toFixed(2) : '—'}
                   </span>
                 ))}

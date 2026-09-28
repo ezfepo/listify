@@ -12,7 +12,7 @@ import {
   updateSubPlaylist,
   upsertPlaylist,
 } from './playlists.js';
-import { upsertTrack } from './tracks.js';
+import { markInArchive, markInMain, upsertTrack } from './tracks.js';
 
 function track(uri: string) {
   return {
@@ -92,6 +92,20 @@ describe('listPlaylistsWithCounts', () => {
 
     const playlists = listPlaylistsWithCounts();
     expect(playlists.find((p) => p.id === sub.id)?.trackCount).toBe(2);
+  });
+
+  it('counts main/archive by in_main/in_archive, since they never get playlist_tracks rows', () => {
+    const main = upsertPlaylist('main123', 'Main', 'main');
+    const archive = upsertPlaylist('archive456', 'Main – Archive', 'archive');
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    upsertTrack(track('spotify:track:2'), 'inbox');
+    markInMain('spotify:track:1');
+    markInMain('spotify:track:2');
+    markInArchive('spotify:track:1');
+
+    const playlists = listPlaylistsWithCounts();
+    expect(playlists.find((p) => p.id === main.id)?.trackCount).toBe(2);
+    expect(playlists.find((p) => p.id === archive.id)?.trackCount).toBe(1);
   });
 });
 
