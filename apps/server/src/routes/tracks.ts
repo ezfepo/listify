@@ -9,6 +9,9 @@ import {
 } from '../db/playlists.js';
 import { getTrack, recomputeStatusFromAssignments, setTrackStatus } from '../db/tracks.js';
 import { suggestPlaylistsForTrack } from '../enrich/suggest.js';
+import { getValidAccessToken } from '../spotify/auth.js';
+import { playTrack } from '../spotify/client.js';
+import { SpotifyAuthError, SpotifyHttpError } from '../spotify/errors.js';
 
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(5000).default(1000),
@@ -129,6 +132,35 @@ export async function trackRoutes(app: FastifyInstance): Promise<void> {
       if (!requireTrack(uri)) continue;
       assignTrackToPlaylist(body.data.playlistId, uri);
       recomputeStatusFromAssignments(uri, countPlaylistsForTrack(uri) > 0);
+    }
+    return reply.code(204).send();
+  });
+
+  // Optional per plan.md — no in-app player, just hand off to the user's active
+  // Spotify device. No active device (or no Premium) is not an app error.
+  app.post('/api/tracks/:uri/play', async (req, reply) => {
+    const { uri } = req.params as { uri: string };
+    if (!requireTrack(uri)) {
+      return reply.code(404).send({ error: 'track_not_found' });
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = await getValidAccessToken();
+    } catch (err) {
+      if (err instanceof SpotifyAuthError) {
+        return reply.code(401).send({ error: err.reason });
+      }
+      throw err;
+    }
+
+    try {
+      await playTrack(accessToken, uri);
+    } catch (err) {
+      if (err instanceof SpotifyHttpError) {
+        return reply.code(err.status).send({ error: 'playback_failed', message: err.message });
+      }
+      throw err;
     }
     return reply.code(204).send();
   });
