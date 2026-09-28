@@ -101,11 +101,20 @@ export function setTrackStatus(uri: string, status: TrackStatus): void {
   db.prepare('UPDATE tracks SET status = ? WHERE uri = ?').run(status, uri);
 }
 
-/** Assign/unassign call this after changing a track's sub-playlist memberships, to keep `status` in sync — never overrides an explicit 'skipped'. */
+/**
+ * Assign/unassign call this after changing a track's sub-playlist memberships, to
+ * keep `status` in sync. Assigning to a playlist is a deliberate action, so it
+ * always wins over a prior 'skipped' — otherwise a skipped track could never be
+ * organized again. Only the *no playlists left* case preserves an explicit skip,
+ * so an unassign never silently resurrects a skipped track back to 'inbox'.
+ */
 export function recomputeStatusFromAssignments(uri: string, assignedToAnyPlaylist: boolean): void {
-  const current = getTrackStatus(uri);
-  if (current === 'skipped') return;
-  setTrackStatus(uri, assignedToAnyPlaylist ? 'organized' : 'inbox');
+  if (assignedToAnyPlaylist) {
+    setTrackStatus(uri, 'organized');
+    return;
+  }
+  if (getTrackStatus(uri) === 'skipped') return;
+  setTrackStatus(uri, 'inbox');
 }
 
 export function getStatusCounts(): Record<TrackStatus, number> {

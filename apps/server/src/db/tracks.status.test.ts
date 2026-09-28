@@ -46,11 +46,19 @@ describe('recomputeStatusFromAssignments', () => {
     expect(getTrackStatus('spotify:track:1')).toBe('inbox');
   });
 
-  it('never overrides an explicit skip', () => {
+  it('assigning a skipped track organizes it — assignment is a deliberate action that overrides skip', () => {
     upsertTrack(track('spotify:track:1'), 'inbox');
     setTrackStatus('spotify:track:1', 'skipped');
 
     recomputeStatusFromAssignments('spotify:track:1', true);
+    expect(getTrackStatus('spotify:track:1')).toBe('organized');
+  });
+
+  it('unassigning down to zero playlists preserves an explicit skip instead of resurrecting it to inbox', () => {
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    setTrackStatus('spotify:track:1', 'skipped');
+
+    recomputeStatusFromAssignments('spotify:track:1', false);
     expect(getTrackStatus('spotify:track:1')).toBe('skipped');
   });
 });
