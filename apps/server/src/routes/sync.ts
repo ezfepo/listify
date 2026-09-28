@@ -1,11 +1,15 @@
 import type { FastifyInstance } from 'fastify';
+import { triggerEnrichment } from '../enrich/queue.js';
 import { SpotifyAuthError, SpotifyRateLimitError } from '../spotify/errors.js';
 import { pull, PullSetupError } from '../sync/pull.js';
 
 export async function syncRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/sync/pull', async (_req, reply) => {
     try {
-      return await pull();
+      const summary = await pull();
+      // Fire-and-forget: enrichment runs in the background and must never delay this response.
+      triggerEnrichment((err) => app.log.error(err, 'enrichment queue failed'));
+      return summary;
     } catch (err) {
       if (err instanceof SpotifyAuthError) {
         return reply.code(401).send({ error: err.reason });

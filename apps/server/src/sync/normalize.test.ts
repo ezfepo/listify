@@ -15,6 +15,7 @@ function trackEntry(overrides: Partial<SpotifyPlaylistItemEntry> = {}): SpotifyP
       is_local: false,
       artists: [{ name: 'Artist A' }, { name: 'Artist B' }],
       album: { name: 'Album A', images: [{ url: 'https://img/large.jpg' }] },
+      external_ids: { isrc: 'USRC12345678' },
     },
     ...overrides,
   };
@@ -32,7 +33,22 @@ describe('normalizeTrackEntry', () => {
       durationMs: 200000,
       addedAt: '2026-01-01T00:00:00Z',
       isLocal: false,
+      isrc: 'USRC12345678',
     });
+  });
+
+  it('sets isrc to null when Spotify has no external_ids for the track', () => {
+    const entry = trackEntry({
+      item: {
+        type: 'track',
+        uri: 'spotify:track:3',
+        id: '3',
+        name: 'Song Three',
+        is_local: false,
+        artists: [],
+      },
+    });
+    expect(normalizeTrackEntry(entry)?.isrc).toBeNull();
   });
 
   it('skips a removed track (item is null)', () => {
@@ -87,9 +103,7 @@ describe('normalizeTrackEntry', () => {
   });
 });
 
-function savedTrackEntry(
-  overrides: Partial<SpotifySavedTrackEntry> = {},
-): SpotifySavedTrackEntry {
+function savedTrackEntry(overrides: Partial<SpotifySavedTrackEntry> = {}): SpotifySavedTrackEntry {
   return {
     added_at: '2026-01-01T00:00:00Z',
     track: {
@@ -100,6 +114,7 @@ function savedTrackEntry(
       is_local: false,
       artists: [{ name: 'Artist A' }],
       album: { name: 'Album A', images: [{ url: 'https://img/large.jpg' }] },
+      external_ids: { isrc: 'USRC87654321' },
     },
     ...overrides,
   };
@@ -117,6 +132,7 @@ describe('normalizeSavedTrackEntry', () => {
       durationMs: 200000,
       addedAt: '2026-01-01T00:00:00Z',
       isLocal: false,
+      isrc: 'USRC87654321',
     });
   });
 

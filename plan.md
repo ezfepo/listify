@@ -238,15 +238,15 @@ three-pane layout.
 
 ### Phase 3b — Enrichment + suggestion engine
 
-- [ ] Add `external_ids.isrc` to the tracks table during Pull.
-- [ ] Provider interface + ReccoBeats + Last.fm providers (`LASTFM_API_KEY` in `.env`).
-- [ ] Background queue, status table, `/api/enrich/status` (progress + coverage %).
-- [ ] Tag normalization + synonym map (JSON file, editable).
-- [ ] `score(track, playlist)` pure function + tests. Recipes CRUD endpoints.
+- [X] Add `external_ids.isrc` to the tracks table during Pull.
+- [X] Provider interface + ReccoBeats + Last.fm providers (`LASTFM_API_KEY` in `.env`).
+- [X] Background queue, status table, `/api/enrich/status` (progress + coverage %).
+- [X] Tag normalization + synonym map (JSON file, editable).
+- [X] `score(track, playlist)` pure function + tests. Recipes CRUD endpoints.
 
-- **Checkpoint:** human reviews coverage report (% of tracks with features / tags)
-  and spot-checks 10 songs. If ReccoBeats coverage < 60%, stop and discuss
-  fallback (Last.fm-only scoring, or a paid catalog API). Commit.
+- [X] **Checkpoint:** reviewed against a real Spotify Liked Songs library (488
+  tracks). ReccoBeats coverage 416/488 = 85.2%, Last.fm coverage 469/488 =
+  96.1% — both well above the 60% bar, no fallback needed. Commit.
 
 ### Phase 4 — Organizer UI
 

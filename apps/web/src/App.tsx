@@ -45,11 +45,16 @@ function SetupAndPull() {
       fetch('/api/playlists').then((res) => res.json()),
       fetch('/api/setup').then((res) => res.json()),
     ])
-      .then(([playlistList, setup]: [PlaylistOption[], { mainSpotifyId: string | null; archiveSpotifyId: string | null }]) => {
-        setPlaylists(playlistList);
-        if (setup.mainSpotifyId) setMainId(setup.mainSpotifyId);
-        if (setup.archiveSpotifyId) setArchiveId(setup.archiveSpotifyId);
-      })
+      .then(
+        ([playlistList, setup]: [
+          PlaylistOption[],
+          { mainSpotifyId: string | null; archiveSpotifyId: string | null },
+        ]) => {
+          setPlaylists(playlistList);
+          if (setup.mainSpotifyId) setMainId(setup.mainSpotifyId);
+          if (setup.archiveSpotifyId) setArchiveId(setup.archiveSpotifyId);
+        },
+      )
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   }, []);
 

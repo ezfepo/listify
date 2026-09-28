@@ -113,7 +113,9 @@ vi.mock('../spotify/auth.js', () => ({
 
 vi.mock('../spotify/client.js', () => ({
   getMyPlaylists: vi.fn(async () => FIXTURE_PLAYLISTS),
-  getPlaylistItems: vi.fn(async (_token: string, playlistId: string) => FIXTURE_ITEMS[playlistId] ?? []),
+  getPlaylistItems: vi.fn(
+    async (_token: string, playlistId: string) => FIXTURE_ITEMS[playlistId] ?? [],
+  ),
   getSavedTracks: vi.fn(async () => FIXTURE_SAVED_TRACKS),
 }));
 
@@ -125,7 +127,9 @@ const { getPlaylistItems } = await import('../spotify/client.js');
 const { LIKED_SONGS_SENTINEL } = await import('../spotify/liked-songs.js');
 
 beforeEach(() => {
-  db.exec('DELETE FROM playlist_tracks; DELETE FROM tracks; DELETE FROM playlists; DELETE FROM settings;');
+  db.exec(
+    'DELETE FROM playlist_tracks; DELETE FROM tracks; DELETE FROM playlists; DELETE FROM settings;',
+  );
 });
 
 describe('pull', () => {
@@ -165,7 +169,9 @@ describe('pull', () => {
 
     await pull();
 
-    const mainTrack = db.prepare('SELECT status FROM tracks WHERE uri = ?').get('spotify:track:1') as {
+    const mainTrack = db
+      .prepare('SELECT status FROM tracks WHERE uri = ?')
+      .get('spotify:track:1') as {
       status: string;
     };
     const archiveTrack = db
@@ -201,7 +207,9 @@ describe('pull', () => {
     const summary = await pull();
 
     expect(summary.mainTrackCount).toBe(1);
-    const track = db.prepare('SELECT status, name FROM tracks WHERE uri = ?').get('spotify:track:9') as {
+    const track = db
+      .prepare('SELECT status, name FROM tracks WHERE uri = ?')
+      .get('spotify:track:9') as {
       status: string;
       name: string;
     };

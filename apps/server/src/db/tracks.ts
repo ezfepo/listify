@@ -13,7 +13,7 @@ export function upsertTrack(track: NormalizedTrack, defaultStatus: 'inbox' | 'or
   if (existing) {
     db.prepare(
       `UPDATE tracks
-       SET name = ?, artists = ?, album = ?, image_url = ?, duration_ms = ?, added_at = ?, is_local = ?
+       SET name = ?, artists = ?, album = ?, image_url = ?, duration_ms = ?, added_at = ?, is_local = ?, isrc = ?
        WHERE uri = ?`,
     ).run(
       track.name,
@@ -23,6 +23,7 @@ export function upsertTrack(track: NormalizedTrack, defaultStatus: 'inbox' | 'or
       track.durationMs,
       track.addedAt,
       track.isLocal ? 1 : 0,
+      track.isrc,
       track.uri,
     );
     return;
@@ -30,8 +31,8 @@ export function upsertTrack(track: NormalizedTrack, defaultStatus: 'inbox' | 'or
 
   db.prepare(
     `INSERT INTO tracks
-       (uri, name, artists, album, image_url, duration_ms, added_at, first_seen_at, status, in_main, in_archive, is_local)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
+       (uri, name, artists, album, image_url, duration_ms, added_at, first_seen_at, status, in_main, in_archive, is_local, isrc)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
   ).run(
     track.uri,
     track.name,
@@ -43,6 +44,7 @@ export function upsertTrack(track: NormalizedTrack, defaultStatus: 'inbox' | 'or
     new Date().toISOString(),
     defaultStatus,
     track.isLocal ? 1 : 0,
+    track.isrc,
   );
 }
 

@@ -23,6 +23,7 @@ export function normalizeTrackEntry(entry: SpotifyPlaylistItemEntry): Normalized
     durationMs: item.duration_ms ?? null,
     addedAt: entry.added_at,
     isLocal: entry.is_local || Boolean(item.is_local),
+    isrc: item.external_ids?.isrc ?? null,
   };
 }
 
@@ -47,5 +48,6 @@ export function normalizeSavedTrackEntry(entry: SpotifySavedTrackEntry): Normali
     durationMs: track.duration_ms ?? null,
     addedAt: entry.added_at,
     isLocal: Boolean(track.is_local),
+    isrc: track.external_ids?.isrc ?? null,
   };
 }

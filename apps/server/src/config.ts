@@ -25,4 +25,7 @@ export const config = {
   spotifyClientId: process.env.SPOTIFY_CLIENT_ID ?? '',
   spotifyRedirectUri: process.env.SPOTIFY_REDIRECT_URI ?? 'http://127.0.0.1:8787/auth/callback',
   webOrigin: process.env.LISTIFY_WEB_ORIGIN ?? 'http://127.0.0.1:5173',
+  // Free key from https://www.last.fm/api/account/create — Last.fm tag lookups
+  // are skipped (not treated as an error) when this isn't set.
+  lastfmApiKey: process.env.LASTFM_API_KEY ?? '',
 };

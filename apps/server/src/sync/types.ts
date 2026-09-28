@@ -7,4 +7,5 @@ export interface NormalizedTrack {
   durationMs: number | null;
   addedAt: string | null;
   isLocal: boolean;
+  isrc: string | null;
 }
