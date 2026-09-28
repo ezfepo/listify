@@ -33,6 +33,11 @@ export function getPlaylistBySpotifyId(spotifyId: string): PlaylistRow | undefin
     .get(spotifyId) as PlaylistRow | undefined;
 }
 
+export function getPlaylistById(id: number): PlaylistRow | undefined {
+  return db.prepare('SELECT id, spotify_id, name, kind FROM playlists WHERE id = ?').get(id) as
+    PlaylistRow | undefined;
+}
+
 export function listSubPlaylists(): PlaylistRow[] {
   return db
     .prepare("SELECT id, spotify_id, name, kind FROM playlists WHERE kind = 'sub'")

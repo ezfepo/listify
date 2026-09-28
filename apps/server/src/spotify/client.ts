@@ -75,7 +75,7 @@ export async function getMyPlaylists(accessToken: string): Promise<SpotifySimpli
 }
 
 const ITEMS_FIELDS =
-  'next,total,items(added_at,is_local,item(id,uri,name,duration_ms,is_local,type,artists(name),album(name,images(url))))';
+  'next,total,items(added_at,is_local,item(id,uri,name,duration_ms,is_local,type,artists(name),album(name,images(url)),external_ids(isrc)))';
 
 /** All items (tracks/episodes) of a playlist (paginated). */
 export async function getPlaylistItems(
@@ -111,6 +111,8 @@ export async function getSavedTracks(accessToken: string): Promise<SpotifySavedT
 
 /** Just the total count of saved tracks, without paginating through all of them. */
 export async function getSavedTracksTotal(accessToken: string): Promise<number> {
-  const page = savedTracksPageSchema.parse(await spotifyGet(accessToken, `${API_BASE}/me/tracks?limit=1`));
+  const page = savedTracksPageSchema.parse(
+    await spotifyGet(accessToken, `${API_BASE}/me/tracks?limit=1`),
+  );
   return page.total;
 }

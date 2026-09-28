@@ -47,6 +47,8 @@ export type SpotifySimplifiedPlaylist = z.infer<typeof simplifiedPlaylistSchema>
 
 export const playlistsPageSchema = pagedSchema(simplifiedPlaylistSchema);
 
+const externalIdsSchema = z.object({ isrc: z.string().optional() }).passthrough();
+
 const playlistItemTrackSchema = z
   .object({
     type: z.enum(['track', 'episode']),
@@ -62,6 +64,7 @@ const playlistItemTrackSchema = z
         images: z.array(z.object({ url: z.string() })).optional(),
       })
       .optional(),
+    external_ids: externalIdsSchema.optional(),
   })
   .passthrough();
 
@@ -96,6 +99,7 @@ const savedTrackObjectSchema = z
         images: z.array(z.object({ url: z.string() })).optional(),
       })
       .optional(),
+    external_ids: externalIdsSchema.optional(),
   })
   .passthrough();
 

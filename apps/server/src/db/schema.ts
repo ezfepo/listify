@@ -87,3 +87,12 @@ db.exec(`
     error TEXT
   );
 `);
+
+// `CREATE TABLE IF NOT EXISTS` above doesn't add columns to a table that already
+// exists from a previous version — so a new column needs its own idempotent check.
+const trackColumns = db.prepare("SELECT name FROM pragma_table_info('tracks')").all() as {
+  name: string;
+}[];
+if (!trackColumns.some((c) => c.name === 'isrc')) {
+  db.exec('ALTER TABLE tracks ADD COLUMN isrc TEXT');
+}
