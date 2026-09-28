@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Organizer } from './organizer/Organizer';
+import { UndoIndicatorDisplay, UndoIndicatorProvider } from './organizer/UndoIndicator';
 
 type HealthState = { status: 'loading' } | { status: 'ok' } | { status: 'error'; message: string };
 
@@ -256,47 +257,50 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="flex h-16 items-center gap-4 border-b border-zinc-800 px-4">
-        <h1 className="text-lg font-semibold">Listify</h1>
-        <nav className="flex gap-1">
-          <button
-            onClick={() => setView('setup')}
-            className={`rounded px-3 py-1 text-sm ${view === 'setup' ? 'bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-900'}`}
-          >
-            Setup
-          </button>
-          <button
-            onClick={() => setView('organize')}
-            className={`rounded px-3 py-1 text-sm ${view === 'organize' ? 'bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-900'}`}
-          >
-            Organize
-          </button>
-        </nav>
-        <div className="ml-auto flex items-center gap-3 text-sm">
-          <p className="text-green-400">Connected as {me.displayName}</p>
-          <button
-            onClick={disconnect}
-            disabled={disconnecting}
-            className="rounded bg-zinc-700 px-3 py-1 disabled:opacity-40"
-          >
-            {disconnecting ? 'Disconnecting…' : 'Disconnect'}
-          </button>
-        </div>
-      </header>
+    <UndoIndicatorProvider>
+      <div className="min-h-screen bg-zinc-950 text-zinc-100">
+        <header className="flex h-16 items-center gap-4 border-b border-zinc-800 px-4">
+          <h1 className="text-lg font-semibold">Listify</h1>
+          <nav className="flex gap-1">
+            <button
+              onClick={() => setView('setup')}
+              className={`rounded px-3 py-1 text-sm ${view === 'setup' ? 'bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-900'}`}
+            >
+              Setup
+            </button>
+            <button
+              onClick={() => setView('organize')}
+              className={`rounded px-3 py-1 text-sm ${view === 'organize' ? 'bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-900'}`}
+            >
+              Organize
+            </button>
+          </nav>
+          <UndoIndicatorDisplay />
+          <div className="ml-auto flex items-center gap-3 text-sm">
+            <p className="text-green-400">Connected as {me.displayName}</p>
+            <button
+              onClick={disconnect}
+              disabled={disconnecting}
+              className="rounded bg-zinc-700 px-3 py-1 disabled:opacity-40"
+            >
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          </div>
+        </header>
 
-      {authError && (
-        <p className="p-2 text-center text-sm text-red-400">
-          Spotify connection failed: {authError}
-        </p>
-      )}
+        {authError && (
+          <p className="p-2 text-center text-sm text-red-400">
+            Spotify connection failed: {authError}
+          </p>
+        )}
 
-      {view === 'setup' && (
-        <div className="flex justify-center py-10">
-          <SetupAndPull onPulled={() => setView('organize')} />
-        </div>
-      )}
-      {view === 'organize' && <Organizer />}
-    </div>
+        {view === 'setup' && (
+          <div className="flex justify-center py-10">
+            <SetupAndPull onPulled={() => setView('organize')} />
+          </div>
+        )}
+        {view === 'organize' && <Organizer />}
+      </div>
+    </UndoIndicatorProvider>
   );
 }

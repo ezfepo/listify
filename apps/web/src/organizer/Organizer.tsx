@@ -6,6 +6,7 @@ import { CenterTable } from './CenterTable';
 import { LeftPane } from './LeftPane';
 import { RecipeEditor } from './RecipeEditor';
 import { TriagePanel, type TriageHotkeys } from './TriagePanel';
+import { useUndoIndicator } from './UndoIndicator';
 import { useUndoStack } from './useUndoStack';
 
 type RightMode = 'triage' | 'autosort';
@@ -19,6 +20,12 @@ function isTypingTarget(el: EventTarget | null): boolean {
 export function Organizer() {
   const queryClient = useQueryClient();
   const { push: pushUndo, undo, topLabel } = useUndoStack();
+  const { setTopLabel } = useUndoIndicator();
+
+  useEffect(() => setTopLabel(topLabel), [topLabel, setTopLabel]);
+  // Clear it when the Organizer unmounts (e.g. switching to the Setup tab) so a
+  // stale "last action" doesn't linger in the header outside this view.
+  useEffect(() => () => setTopLabel(null), [setTopLabel]);
 
   const [statusFilter, setStatusFilter] = useState<TrackStatus | null>(null);
   const [search, setSearch] = useState('');
@@ -136,6 +143,27 @@ export function Organizer() {
           label: `Assign ${uris.length} to ${name}`,
           undo: async () => {
             await api.bulkUnassign(uris, playlistId);
+            invalidateAll();
+          },
+        });
+        setSelection(new Set());
+      } catch (err) {
+        reportError(err);
+      }
+    },
+    [invalidateAll, playlists, pushUndo, reportError],
+  );
+
+  const doBulkUnassign = useCallback(
+    async (uris: string[], playlistId: number) => {
+      try {
+        await api.bulkUnassign(uris, playlistId);
+        invalidateAll();
+        const name = playlists.find((p) => p.id === playlistId)?.name ?? 'playlist';
+        pushUndo({
+          label: `Unassign ${uris.length} from ${name}`,
+          undo: async () => {
+            await api.bulkAssign(uris, playlistId);
             invalidateAll();
           },
         });
@@ -327,6 +355,7 @@ export function Organizer() {
         onAssign={doAssign}
         onUnassign={doUnassign}
         onBulkAssign={doBulkAssign}
+        onBulkUnassign={doBulkUnassign}
         onSetStatus={doSetStatus}
         onPlay={doPlay}
         onFocusTrack={focusTrack}
@@ -388,11 +417,6 @@ export function Organizer() {
       {toast && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded bg-zinc-800 px-4 py-2 text-sm shadow-lg">
           {toast}
-        </div>
-      )}
-      {topLabel && (
-        <div className="fixed top-20 right-4 rounded bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 shadow-lg">
-          Last action: {topLabel} (press u to undo)
         </div>
       )}
     </div>

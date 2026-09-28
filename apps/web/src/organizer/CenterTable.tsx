@@ -26,6 +26,7 @@ interface CenterTableProps {
   onAssign: (uri: string, playlistId: number) => void;
   onUnassign: (uri: string, playlistId: number) => void;
   onBulkAssign: (uris: string[], playlistId: number) => void;
+  onBulkUnassign: (uris: string[], playlistId: number) => void;
   onSetStatus: (uri: string, status: 'inbox' | 'organized' | 'skipped') => void;
   onPlay: (uri: string) => void;
   onFocusTrack: (uri: string) => void;
@@ -45,6 +46,7 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
     onAssign,
     onUnassign,
     onBulkAssign,
+    onBulkUnassign,
     onSetStatus,
     onPlay,
     onFocusTrack,
@@ -108,7 +110,7 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
               onChange={(e) => setBulkTargetId(e.target.value ? Number(e.target.value) : null)}
               className="rounded bg-zinc-900 px-2 py-1 text-xs"
             >
-              <option value="">Assign to…</option>
+              <option value="">Playlist…</option>
               {subPlaylists.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -126,6 +128,18 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
               title={bulkTargetId ? undefined : 'Pick a playlist first'}
             >
               Assign
+            </button>
+            <button
+              disabled={!bulkTargetId}
+              onClick={() => {
+                if (!bulkTargetId) return;
+                onBulkUnassign([...selection], bulkTargetId);
+                setBulkTargetId(null);
+              }}
+              className="rounded bg-zinc-700 px-2 py-1 disabled:opacity-40"
+              title={bulkTargetId ? undefined : 'Pick a playlist first'}
+            >
+              Unassign
             </button>
             <button
               onClick={() => {
