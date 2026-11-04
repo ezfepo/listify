@@ -12,3 +12,11 @@ updates:
         update-types:
           - 'minor'
           - 'patch'
+    ignore:
+      # Keep @types/node on the runtime's major (engines: node >=24): types for a newer
+      # Node expose APIs that do not exist at runtime. Bump deliberately with the engine.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # TypeScript majors need a deliberate migration (tsconfig, typescript-eslint support).
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
