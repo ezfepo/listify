@@ -33,6 +33,12 @@ function readAuthError(): string | null {
   return error;
 }
 
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
 function SetupAndPull({ onPulled }: { onPulled: () => void }) {
   const [playlists, setPlaylists] = useState<PlaylistOption[] | null>(null);
   const [mainId, setMainId] = useState('');
@@ -44,19 +50,14 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/playlists').then((res) => res.json()),
-      fetch('/api/setup').then((res) => res.json()),
+      getJson<PlaylistOption[]>('/api/playlists'),
+      getJson<{ mainSpotifyId: string | null; archiveSpotifyId: string | null }>('/api/setup'),
     ])
-      .then(
-        ([playlistList, setup]: [
-          PlaylistOption[],
-          { mainSpotifyId: string | null; archiveSpotifyId: string | null },
-        ]) => {
-          setPlaylists(playlistList);
-          if (setup.mainSpotifyId) setMainId(setup.mainSpotifyId);
-          if (setup.archiveSpotifyId) setArchiveId(setup.archiveSpotifyId);
-        },
-      )
+      .then(([playlistList, setup]) => {
+        setPlaylists(playlistList);
+        if (setup.mainSpotifyId) setMainId(setup.mainSpotifyId);
+        if (setup.archiveSpotifyId) setArchiveId(setup.archiveSpotifyId);
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   }, []);
 
@@ -96,6 +97,8 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
   }
 
   if (!playlists) {
+    // A failed load must not leave the user on a spinner forever.
+    if (error) return <p className="text-red-400 text-sm">Could not load playlists: {error}</p>;
     return <p className="text-zinc-400 text-sm">Loading playlists…</p>;
   }
 

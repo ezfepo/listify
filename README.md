@@ -7,7 +7,7 @@ arriving in monthly batches.
 
 It's a personal tool, not a hosted service: everything runs on your own
 machine, your listening data stays in a local SQLite file, and Spotify is
-only ever a sync *target*, never the source of truth.
+only ever a sync _target_, never the source of truth.
 
 ## How it works
 
@@ -79,7 +79,7 @@ npm run lint    # ESLint
 npm run format  # Prettier
 ```
 
-`DRY_RUN=true` (the default) makes the sync engine log what it *would* do
+`DRY_RUN=true` (the default) makes the sync engine log what it _would_ do
 to Spotify instead of writing anything — safe to explore with before going
 live.
 
