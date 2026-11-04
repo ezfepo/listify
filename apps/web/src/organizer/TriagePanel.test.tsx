@@ -65,6 +65,12 @@ function setup(overrides: Partial<ComponentProps<typeof TriagePanel>> = {}) {
   return { props, mocks, ...view };
 }
 
+// findBy* resolves once the DOM commits, but hotkeys are registered in a passive effect
+// that may not have flushed yet; wait for it before reading the latest handlers.
+async function flushEffects() {
+  await act(async () => {});
+}
+
 function lastHotkeys(registerHotkeys: ReturnType<typeof vi.fn>): TriageHotkeys {
   const handlers = registerHotkeys.mock.calls.at(-1)?.[0] as TriageHotkeys | null | undefined;
   if (!handlers) throw new Error('hotkeys not registered');
@@ -121,6 +127,7 @@ describe('TriagePanel', () => {
     ]);
     const { mocks } = setup();
     await screen.findByText('PL3');
+    await flushEffects();
 
     act(() => lastHotkeys(mocks.registerHotkeys).acceptSuggestions());
     expect(mocks.onAssign.mock.calls).toEqual([
@@ -133,6 +140,7 @@ describe('TriagePanel', () => {
     getTrackSuggestions.mockResolvedValue([suggestion(5, 80), suggestion(6, 10)]);
     const { mocks } = setup();
     await screen.findByText('PL6');
+    await flushEffects();
 
     act(() => lastHotkeys(mocks.registerHotkeys).togglePlaylist(1));
     expect(mocks.onAssign).toHaveBeenCalledWith('spotify:track:1', 6);
