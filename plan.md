@@ -290,7 +290,7 @@ three-pane layout.
 
 ### Phase 5b — UI revamp: Organize + Triage
 
-UI only: no server, sync or Spotify changes. Mockups: canvas "Listify UI"
+UI only apart from exposing two stored track fields read-only (see notes); no sync or Spotify changes. Mockups: canvas "Listify UI"
 <https://claude.ai/artifact/63p1NHvSKyB6wxCiGRd9uz>. Stack stays React + Tailwind;
 no new dependencies unless a step below says so.
 
@@ -332,9 +332,9 @@ no new dependencies unless a step below says so.
   progress card math, and that every Triage hotkey still works. `npm run lint`,
   `format:check`, `test`, `build` all pass.
 
-- Implementation notes: the table has no "time" column (no duration in the API
-  and this phase is UI-only), so it shows BPM next to energy. IBM Plex loads from
-  Google Fonts via `index.html` (system fallbacks if offline), since `@fontsource`
+- Implementation notes: the one server touch is read-only: `/api/tracks` now also
+  returns `durationMs` and `addedAt` (already stored from Spotify) so the table
+  can show a Time column. IBM Plex loads from Google Fonts via `index.html` (system fallbacks if offline), since `@fontsource`
   would be a new dependency. Colour token for text is `ink`.
 
 - **Checkpoint:** human triages real songs in both views over a session and

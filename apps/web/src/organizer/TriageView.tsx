@@ -1,4 +1,4 @@
-import { FEATURE_KEYS, type PlaylistView, type TrackView } from '../lib/api';
+import { FEATURE_KEYS, formatDuration, type PlaylistView, type TrackView } from '../lib/api';
 import { Chip, Kbd, ProgressBar } from '../ui';
 import { SUGGESTION_THRESHOLD, useTriage, type TriageHotkeys } from './useTriage';
 import type { HistoryItem } from './useUndoStack';
@@ -102,7 +102,17 @@ export function TriageView({
                 </p>
                 <h2 className="mt-1 truncate text-2xl font-semibold">{track.name}</h2>
                 <p className="truncate text-muted">{track.artists}</p>
-                {track.album && <p className="truncate text-sm text-muted">{track.album}</p>}
+                {(track.album || track.durationMs != null) && (
+                  <p className="truncate text-sm text-muted">
+                    {track.album}
+                    {track.album && track.durationMs != null && ' · '}
+                    {track.durationMs != null && (
+                      <span className="font-mono tabular-nums">
+                        {formatDuration(track.durationMs)}
+                      </span>
+                    )}
+                  </p>
+                )}
                 <div className="mt-3 flex flex-wrap justify-center gap-2 text-sm sm:justify-start">
                   <button
                     onClick={() => onPlay(track.uri)}

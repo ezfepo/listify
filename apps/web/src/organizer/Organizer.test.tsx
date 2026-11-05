@@ -52,6 +52,8 @@ function track(n: number, overrides: Partial<TrackView> = {}): TrackView {
     artists: `Artist ${n}`,
     album: null,
     imageUrl: null,
+    durationMs: null,
+    addedAt: null,
     isrc: null,
     status: 'inbox',
     inMain: true,

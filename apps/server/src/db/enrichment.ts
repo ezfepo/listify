@@ -89,6 +89,8 @@ export interface TrackEnrichmentView {
   artists: string;
   album: string | null;
   imageUrl: string | null;
+  durationMs: number | null;
+  addedAt: string | null;
   isrc: string | null;
   status: string;
   inMain: boolean;
@@ -105,6 +107,8 @@ interface TrackRow {
   artists: string;
   album: string | null;
   image_url: string | null;
+  duration_ms: number | null;
+  added_at: string | null;
   isrc: string | null;
   status: string;
   in_main: number;
@@ -150,6 +154,8 @@ function toTrackView(row: TrackRow): TrackEnrichmentView {
     artists: row.artists,
     album: row.album,
     imageUrl: row.image_url,
+    durationMs: row.duration_ms,
+    addedAt: row.added_at,
     isrc: row.isrc,
     status: row.status,
     inMain: Boolean(row.in_main),
@@ -165,7 +171,7 @@ function toTrackView(row: TrackRow): TrackEnrichmentView {
 export function getTrackForReview(uri: string): TrackEnrichmentView | undefined {
   const row = db
     .prepare(
-      'SELECT uri, name, artists, album, image_url, isrc, status, in_main, in_archive FROM tracks WHERE uri = ?',
+      'SELECT uri, name, artists, album, image_url, duration_ms, added_at, isrc, status, in_main, in_archive FROM tracks WHERE uri = ?',
     )
     .get(uri) as TrackRow | undefined;
   return row ? toTrackView(row) : undefined;
@@ -199,7 +205,7 @@ export function listTracksForReview(options: ListTracksOptions): ListTracksResul
 
   const rows = db
     .prepare(
-      `SELECT uri, name, artists, album, image_url, isrc, status, in_main, in_archive
+      `SELECT uri, name, artists, album, image_url, duration_ms, added_at, isrc, status, in_main, in_archive
        FROM tracks
        WHERE (? IS NULL OR name LIKE ? OR artists LIKE ?)
          AND (? IS NULL OR status = ?)

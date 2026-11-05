@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { api, FEATURE_KEYS, type PlaylistSuggestion, type TrackView } from '../lib/api';
+import {
+  api,
+  FEATURE_KEYS,
+  formatDuration,
+  type PlaylistSuggestion,
+  type TrackView,
+} from '../lib/api';
 import { Chip } from '../ui';
 
 interface InspectorProps {
@@ -40,6 +46,11 @@ export function Inspector({ track, onPlay, onOpenInTriage }: InspectorProps) {
         <div className="min-w-0">
           <div className="truncate font-semibold">{track.name}</div>
           <div className="truncate text-sm text-muted">{track.artists}</div>
+          {track.durationMs != null && (
+            <div className="font-mono text-xs tabular-nums text-muted">
+              {formatDuration(track.durationMs)}
+            </div>
+          )}
         </div>
       </div>
 

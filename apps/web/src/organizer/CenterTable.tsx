@@ -4,6 +4,7 @@ import { forwardRef, useMemo, useRef, useState } from 'react';
 import {
   api,
   FEATURE_KEYS,
+  formatDuration,
   type FeatureKey,
   type PlaylistView,
   type StatusCounts,
@@ -56,7 +57,7 @@ interface CenterTableProps {
 
 const ROW_HEIGHT = 48;
 const COLUMNS =
-  'grid grid-cols-[1.5rem_2rem_minmax(11rem,2fr)_minmax(7rem,1fr)_minmax(8rem,1.5fr)_minmax(7rem,1fr)_3.5rem_3.5rem_10rem] items-center gap-2';
+  'grid grid-cols-[1.5rem_2rem_minmax(11rem,2fr)_minmax(7rem,1fr)_minmax(8rem,1.5fr)_minmax(7rem,1fr)_3.5rem_3.5rem_3.5rem_10rem] items-center gap-2';
 
 function SuggestedCell({ track }: { track: TrackView }) {
   const { data = [] } = useQuery({
@@ -225,6 +226,7 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
             <span>Suggested</span>
             <span title="valence / energy">Energy</span>
             <span>BPM</span>
+            <span>Time</span>
             <span />
           </div>
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
@@ -288,6 +290,9 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
                   </span>
                   <span className="font-mono text-xs tabular-nums text-muted">
                     {track.features?.tempo !== undefined ? Math.round(track.features.tempo) : '—'}
+                  </span>
+                  <span className="font-mono text-xs tabular-nums text-muted">
+                    {formatDuration(track.durationMs)}
                   </span>
                   <div className="flex items-center justify-end gap-1">
                     <select

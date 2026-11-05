@@ -171,3 +171,18 @@ describe('api endpoints', () => {
     expect(call(0).body).toEqual(snapshot);
   });
 });
+
+describe('formatDuration', () => {
+  it('formats milliseconds as m:ss', async () => {
+    const { formatDuration } = await import('./api');
+    expect(formatDuration(215000)).toBe('3:35');
+    expect(formatDuration(60000)).toBe('1:00');
+    expect(formatDuration(5400)).toBe('0:05');
+  });
+
+  it('shows a dash when unknown', async () => {
+    const { formatDuration } = await import('./api');
+    expect(formatDuration(null)).toBe('—');
+    expect(formatDuration(undefined)).toBe('—');
+  });
+});

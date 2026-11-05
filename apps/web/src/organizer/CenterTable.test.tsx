@@ -35,6 +35,8 @@ function track(n: number, overrides: Partial<TrackView> = {}): TrackView {
     artists: `Artist ${n}`,
     album: null,
     imageUrl: null,
+    durationMs: null,
+    addedAt: null,
     isrc: null,
     status: 'inbox',
     inMain: true,
@@ -128,6 +130,11 @@ describe('CenterTable rows', () => {
     expect(within(row).queryByText('120')).not.toBeNull();
     // album, suggested, energy and bpm are all empty for the bare track
     expect(within(rowFor('Track 2')).getAllByText('—').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('shows the track length as m:ss', () => {
+    setup({ tracks: [track(1, { durationMs: 215000 })] });
+    expect(within(rowFor('Track 1')).queryByText('3:35')).not.toBeNull();
   });
 
   it('shows the playlists a track belongs to, and clicking one unassigns it', async () => {

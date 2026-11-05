@@ -17,6 +17,8 @@ const track: TrackView = {
   artists: 'Artist A',
   album: null,
   imageUrl: null,
+  durationMs: null,
+  addedAt: null,
   isrc: null,
   status: 'inbox',
   inMain: true,
@@ -49,6 +51,17 @@ describe('Inspector', () => {
     expect(screen.queryByText('upbeat')).not.toBeNull();
     await screen.findByText('Gym');
     expect(getTrackSuggestions).toHaveBeenCalledWith('spotify:track:1');
+  });
+
+  it('shows the track length', () => {
+    render(
+      <Inspector
+        track={{ ...track, durationMs: 185000 }}
+        onPlay={vi.fn()}
+        onOpenInTriage={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('3:05')).not.toBeNull();
   });
 
   it('plays, links to Spotify and opens the song in Triage', async () => {

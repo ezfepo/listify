@@ -18,6 +18,8 @@ const track: TrackView = {
   artists: 'Artist A',
   album: null,
   imageUrl: null,
+  durationMs: null,
+  addedAt: null,
   isrc: null,
   status: 'inbox',
   inMain: true,
@@ -117,6 +119,11 @@ describe('TriageView stage', () => {
     expect(screen.queryByText('0.75')).not.toBeNull();
     expect(screen.queryByText('128.00')).not.toBeNull();
     expect(screen.queryByText('dance')).not.toBeNull();
+  });
+
+  it('shows the track length next to the album', () => {
+    setup({ track: { ...track, album: 'The Album', durationMs: 65000 } });
+    expect(screen.queryByText('1:05')).not.toBeNull();
   });
 
   it('says so when there are no audio features or tags yet', () => {
