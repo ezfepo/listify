@@ -288,6 +288,59 @@ three-pane layout.
   tracks added to Archive / removed from Main), backup written. Confirmed
   correct. Commit.
 
+### Phase 5b — UI revamp: Organize + Triage
+
+UI only: no server, sync or Spotify changes. Mockups: canvas "Listify UI"
+<https://claude.ai/artifact/63p1NHvSKyB6wxCiGRd9uz>. Stack stays React + Tailwind;
+no new dependencies unless a step below says so.
+
+- [x] Design tokens in Tailwind (`index.css` `@theme`): the light palette from the
+  mockups (ground, surface, raise, line, text, muted, accent blue, done green),
+  IBM Plex Sans + IBM Plex Mono (tabular numbers). Replace the hard-coded
+  `zinc-*` classes. Shared building blocks: `Chip`, `Kbd`, `ProgressBar`.
+- [x] App shell: header with tabs Setup · Organize · **Triage** · Sync (active
+  tab underlined), undo indicator, connection status. `view` state gains
+  `'triage'`. Keep `UndoIndicatorProvider` above both views.
+- [x] **Organize** (the Ledger layout):
+  - Progress card on top: % organized, Inbox / Archive / Skipped counts, and a
+    "Triage the next song" button. Uses `statusCounts` from `/api/library`; no
+    new endpoint.
+  - Playlist shelf (horizontal tiles with counts) replaces the left pane. Keeps
+    create, delete and edit recipe. Main and Archive stay read-only entries.
+  - Status segmented control + search + sort above one dense table (cover,
+    title/artist, album, playlists, suggested, energy, time). Keep the
+    virtualization from Phase 4.
+  - Floating bulk bar when songs are selected ("N selected, assign to …").
+  - Right inspector for the focused song (suggestions, Play, Open in Spotify)
+    with an "Open in Triage" button; the Auto-sort tab stays here.
+- [x] **Triage** (the Deck layout, light theme): "Up next" queue rail, big song
+  stage with audio facts and tags, 3×3 grid of target playlists (best match
+  first, hotkeys 1–9), Skip / Accept 60+ / Done bar, and a session history column
+  with Undo. Reuses `TriagePanel` logic (`registerHotkeys`, suggestions,
+  `SUGGESTION_THRESHOLD`); extract it into a view-independent hook rather than
+  copying.
+- [x] Moving between views keeps the song: Organize → Triage starts on the
+  focused song; leaving Triage returns to Organize with that song focused. New
+  global hotkey `t` toggles the two views (ignored while typing).
+- [x] Session history: the undo stack already holds labels; expose them (with
+  timestamps) for the history column instead of a second store.
+- [x] Responsive: layouts stack at phone width, tables scroll in their own box.
+  Keyboard focus visible everywhere, contrast ≥ 4.5:1, `prefers-reduced-motion`
+  respected.
+- [x] Tests: update web tests for the new components (Testing Library, `lib/api`
+  mocked, `react-virtual` mocked); cover the `t` hotkey, view handoff, bulk bar,
+  progress card math, and that every Triage hotkey still works. `npm run lint`,
+  `format:check`, `test`, `build` all pass.
+
+- Implementation notes: the table has no "time" column (no duration in the API
+  and this phase is UI-only), so it shows BPM next to energy. IBM Plex loads from
+  Google Fonts via `index.html` (system fallbacks if offline), since `@fontsource`
+  would be a new dependency. Colour token for text is `ink`.
+
+- **Checkpoint:** human triages real songs in both views over a session and
+  reports friction; fix it. `sync-safety-reviewer` is not needed (no sync
+  changes), but confirm the Sync tab and Diff Preview still work. Commit.
+
 ### Phase 6 — Go live, carefully
 
 - [ ] Human duplicates Main in Spotify as a manual safety copy.

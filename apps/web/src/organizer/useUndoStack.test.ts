@@ -76,3 +76,21 @@ describe('useUndoStack', () => {
     expect(undone[49]).toBe(10);
   });
 });
+
+describe('useUndoStack history', () => {
+  it('exposes labels with timestamps, oldest first, and drops undone entries', async () => {
+    const { result } = renderHook(() => useUndoStack());
+    expect(result.current.history).toEqual([]);
+
+    const before = Date.now();
+    act(() => {
+      result.current.push({ label: 'a', undo: async () => {} });
+      result.current.push({ label: 'b', undo: async () => {} });
+    });
+    expect(result.current.history.map((h) => h.label)).toEqual(['a', 'b']);
+    expect(result.current.history[0]!.at).toBeGreaterThanOrEqual(before);
+
+    await act(() => result.current.undo());
+    expect(result.current.history.map((h) => h.label)).toEqual(['a']);
+  });
+});

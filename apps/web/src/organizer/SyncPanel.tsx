@@ -16,12 +16,12 @@ function describeOp(op: DiffOperation): string {
 
 function OperationList({ operations }: { operations: DiffOperation[] }) {
   if (operations.length === 0) {
-    return <p className="text-sm text-zinc-500">Nothing to do — everything is already in sync.</p>;
+    return <p className="text-sm text-muted">Nothing to do — everything is already in sync.</p>;
   }
   return (
     <ul className="space-y-1 text-sm">
       {operations.map((op, i) => (
-        <li key={i} className="rounded bg-zinc-800 px-2 py-1">
+        <li key={i} className="rounded bg-raise px-2 py-1">
           {describeOp(op)}
         </li>
       ))}
@@ -84,7 +84,7 @@ export function SyncPanel() {
     <div className="mx-auto max-w-2xl space-y-6 p-6 text-sm">
       <section className="space-y-3">
         <h2 className="text-base font-semibold">Sync to Spotify</h2>
-        <p className="text-zinc-400">
+        <p className="text-muted">
           Preview what applying your local organizing would do to Spotify, then apply it. Until
           Phase 6, applies are dry-run: every planned write is logged, nothing actually touches
           Spotify.
@@ -93,27 +93,27 @@ export function SyncPanel() {
           <button
             onClick={loadPreview}
             disabled={busy}
-            className="rounded bg-zinc-700 px-3 py-1.5 disabled:opacity-40"
+            className="rounded bg-raise px-3 py-1.5 disabled:opacity-40"
           >
             Preview Diff
           </button>
           <button
             onClick={runApply}
             disabled={busy}
-            className="rounded bg-green-600 px-3 py-1.5 disabled:opacity-40"
+            className="rounded bg-accent text-white px-3 py-1.5 disabled:opacity-40"
           >
             Apply
           </button>
         </div>
 
-        {error && <p className="text-red-400">{error}</p>}
+        {error && <p className="text-danger">{error}</p>}
 
         {preview && (
-          <div className="space-y-2 rounded border border-zinc-800 p-3">
+          <div className="space-y-2 rounded border border-line p-3">
             <h3 className="font-medium">Diff Preview</h3>
             <OperationList operations={preview.operations} />
             {preview.skippedLocalUris.length > 0 && (
-              <p className="text-zinc-500">
+              <p className="text-muted">
                 Skipping {preview.skippedLocalUris.length} local-file track(s) (Spotify can't manage
                 these by URI).
               </p>
@@ -122,28 +122,27 @@ export function SyncPanel() {
         )}
 
         {applyResult && (
-          <div className="space-y-2 rounded border border-zinc-800 p-3">
+          <div className="space-y-2 rounded border border-line p-3">
             <h3 className="font-medium">
-              Apply result{' '}
-              {applyResult.dryRun && <span className="text-yellow-400">(dry run)</span>}
+              Apply result {applyResult.dryRun && <span className="text-amber-700">(dry run)</span>}
             </h3>
-            <p className="text-zinc-500">Backup written to {applyResult.backupPath}</p>
+            <p className="text-muted">Backup written to {applyResult.backupPath}</p>
             <ul className="space-y-1">
               {applyResult.operations.map((entry, i) => (
-                <li key={i} className="rounded bg-zinc-800 px-2 py-1">
+                <li key={i} className="rounded bg-raise px-2 py-1">
                   <span
                     className={
                       entry.status === 'failed'
-                        ? 'text-red-400'
+                        ? 'text-danger'
                         : entry.status === 'dry_run'
-                          ? 'text-yellow-400'
-                          : 'text-green-400'
+                          ? 'text-amber-700'
+                          : 'text-done'
                     }
                   >
                     [{entry.status}]
                   </span>{' '}
                   {describeOp(entry.operation)}
-                  {entry.error && <span className="text-red-400"> — {entry.error}</span>}
+                  {entry.error && <span className="text-danger"> — {entry.error}</span>}
                 </li>
               ))}
             </ul>
@@ -151,15 +150,15 @@ export function SyncPanel() {
         )}
       </section>
 
-      <section className="space-y-3 border-t border-zinc-800 pt-6">
+      <section className="space-y-3 border-t border-line pt-6">
         <h2 className="text-base font-semibold">Backup</h2>
         <div className="flex items-center gap-2">
-          <button onClick={exportJson} className="rounded bg-zinc-700 px-3 py-1.5">
+          <button onClick={exportJson} className="rounded bg-raise px-3 py-1.5">
             Export JSON
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="rounded bg-zinc-700 px-3 py-1.5"
+            className="rounded bg-raise px-3 py-1.5"
           >
             Import JSON
           </button>
@@ -175,7 +174,7 @@ export function SyncPanel() {
             }}
           />
         </div>
-        {importMessage && <p className="text-green-400">{importMessage}</p>}
+        {importMessage && <p className="text-done">{importMessage}</p>}
       </section>
     </div>
   );

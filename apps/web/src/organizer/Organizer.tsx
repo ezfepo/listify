@@ -3,23 +3,35 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, type PlaylistView, type TrackStatus } from '../lib/api';
 import { AutoSortPanel } from './AutoSortPanel';
 import { CenterTable } from './CenterTable';
-import { LeftPane } from './LeftPane';
+import { BulkBar } from './BulkBar';
+import { Inspector } from './Inspector';
+import { PlaylistShelf, type PlaylistSelection } from './PlaylistShelf';
+import { ProgressCard } from './ProgressCard';
 import { RecipeEditor } from './RecipeEditor';
-import { TriagePanel, type TriageHotkeys } from './TriagePanel';
+import { TriageView, type TriageHotkeys } from './TriageView';
 import { useUndoIndicator } from './UndoIndicator';
 import { useUndoStack } from './useUndoStack';
 
-type RightMode = 'triage' | 'autosort';
-type PlaylistSelection = number | 'main' | 'archive' | null;
+type RightMode = 'inspector' | 'autosort';
+export type WorkspaceMode = 'organize' | 'triage';
 
 function isTypingTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
 }
 
-export function Organizer() {
+interface OrganizerProps {
+  mode: WorkspaceMode;
+  onModeChange: (mode: WorkspaceMode) => void;
+}
+
+/**
+ * The Organize and Triage views share one workspace (data, undo stack, focused
+ * song), so moving between them keeps the song and the session history.
+ */
+export function Organizer({ mode, onModeChange }: OrganizerProps) {
   const queryClient = useQueryClient();
-  const { push: pushUndo, undo, topLabel } = useUndoStack();
+  const { push: pushUndo, undo, topLabel, history } = useUndoStack();
   const { setTopLabel } = useUndoIndicator();
 
   useEffect(() => setTopLabel(topLabel), [topLabel, setTopLabel]);
@@ -32,7 +44,7 @@ export function Organizer() {
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<PlaylistSelection>(null);
   const [editingRecipeId, setEditingRecipeId] = useState<number | null>(null);
-  const [rightMode, setRightMode] = useState<RightMode>('triage');
+  const [rightMode, setRightMode] = useState<RightMode>('inspector');
   const [triageIndex, setTriageIndex] = useState(0);
   const [focusedTrackUri, setFocusedTrackUri] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -250,8 +262,26 @@ export function Organizer() {
 
   function focusTrack(uri: string) {
     setFocusedTrackUri(uri);
-    setRightMode('triage');
+    setRightMode('inspector');
   }
+
+  function triageNext() {
+    setFocusedTrackUri(null);
+    setTriageIndex(0);
+    onModeChange('triage');
+  }
+
+  // Leaving Triage returns to Organize with the song being triaged focused.
+  const triageUriRef = useRef<string | undefined>(undefined);
+  triageUriRef.current = currentTriageTrack?.uri;
+  const previousModeRef = useRef(mode);
+  useEffect(() => {
+    if (previousModeRef.current === 'triage' && mode === 'organize' && triageUriRef.current) {
+      setFocusedTrackUri(triageUriRef.current);
+      setRightMode('inspector');
+    }
+    previousModeRef.current = mode;
+  }, [mode]);
 
   function toggleSelect(uri: string) {
     setSelection((prev) => {
@@ -266,8 +296,13 @@ export function Organizer() {
   // enter, s) only act while the Triage panel is mounted and has registered handlers.
   useEffect(() => {
     function handler(e: KeyboardEvent) {
-      if (isTypingTarget(e.target)) return;
+      if (isTypingTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
 
+      if (e.key === 't') {
+        e.preventDefault();
+        onModeChange(mode === 'triage' ? 'organize' : 'triage');
+        return;
+      }
       if (e.key === '/') {
         e.preventDefault();
         searchInputRef.current?.focus();
@@ -279,7 +314,7 @@ export function Organizer() {
         return;
       }
 
-      const hotkeys = rightMode === 'triage' ? hotkeysRef.current : null;
+      const hotkeys = mode === 'triage' ? hotkeysRef.current : null;
       if (!hotkeys) return;
 
       if (e.key === 'j') {
@@ -312,7 +347,7 @@ export function Organizer() {
     }
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [rightMode, inboxList.length, undo]);
+  }, [mode, onModeChange, inboxList.length, undo]);
 
   const registerHotkeys = useCallback((handlers: TriageHotkeys | null) => {
     hotkeysRef.current = handlers;
@@ -333,86 +368,116 @@ export function Organizer() {
   );
 
   if (library.isLoading) {
-    return <p className="p-4 text-sm text-zinc-400">Loading your library…</p>;
+    return <p className="p-4 text-sm text-muted">Loading your library…</p>;
   }
 
+  const statusCounts = library.data?.statusCounts ?? { inbox: 0, organized: 0, skipped: 0 };
+  const triageIndexInQueue = currentTriageTrack
+    ? inboxList.findIndex((t) => t.uri === currentTriageTrack.uri)
+    : -1;
+  const upNext = triageIndexInQueue >= 0 ? inboxList.slice(triageIndexInQueue + 1) : inboxList;
+  const tabClass = (active: boolean) =>
+    `flex-1 px-3 py-2 ${active ? 'border-b-2 border-accent font-medium' : 'text-muted'}`;
+
   return (
-    <div className="flex h-[calc(100vh-4rem)] w-full">
-      <LeftPane
-        statusCounts={library.data?.statusCounts ?? { inbox: 0, organized: 0, skipped: 0 }}
-        statusFilter={statusFilter}
-        onStatusFilterChange={handleStatusFilterChange}
-        playlists={playlists}
-        selectedPlaylistId={selectedPlaylistId}
-        onSelectPlaylist={handleSelectPlaylist}
-        onCreatePlaylist={createPlaylist}
-        onDeletePlaylist={deletePlaylist}
-        onEditRecipe={setEditingRecipeId}
-      />
-
-      <CenterTable
-        ref={searchInputRef}
-        tracks={displayedTracks}
-        selection={selection}
-        onToggleSelect={toggleSelect}
-        onClearSelection={() => setSelection(new Set())}
-        onSelectAll={(uris) => setSelection(new Set(uris))}
-        search={search}
-        onSearchChange={setSearch}
-        playlists={playlists}
-        onAssign={doAssign}
-        onUnassign={doUnassign}
-        onBulkAssign={doBulkAssign}
-        onBulkUnassign={doBulkUnassign}
-        onSetStatus={doSetStatus}
-        onPlay={doPlay}
-        onFocusTrack={focusTrack}
-      />
-
-      <div className="flex h-full min-h-0 shrink-0 flex-col">
-        <div className="flex border-b border-zinc-800 text-xs">
-          <button
-            onClick={() => setRightMode('triage')}
-            className={`flex-1 px-3 py-2 ${rightMode === 'triage' ? 'bg-zinc-800' : 'text-zinc-500'}`}
-          >
-            Triage
-          </button>
-          <button
-            onClick={() => setRightMode('autosort')}
-            disabled={!selectedSubPlaylist}
-            className={`flex-1 px-3 py-2 disabled:opacity-40 ${rightMode === 'autosort' ? 'bg-zinc-800' : 'text-zinc-500'}`}
-          >
-            Auto-sort
-          </button>
-        </div>
-
-        {rightMode === 'triage' && (
-          <TriagePanel
-            track={currentTriageTrack}
-            queueLength={inboxList.length}
+    <div className="w-full">
+      {mode === 'triage' ? (
+        <TriageView
+          track={currentTriageTrack}
+          upNext={upNext}
+          queueLength={inboxList.length}
+          playlists={playlists}
+          history={history}
+          onUndo={() => void undo()}
+          onSelectTrack={setFocusedTrackUri}
+          onAssign={(uri, playlistId) => doAssign(uri, playlistId, false)}
+          onSkip={(uri) => {
+            doSetStatus(uri, 'skipped');
+            setFocusedTrackUri(null);
+            setTriageIndex(0);
+          }}
+          onDone={() => {
+            setFocusedTrackUri(null);
+            setTriageIndex(0);
+          }}
+          onPlay={doPlay}
+          registerHotkeys={registerHotkeys}
+        />
+      ) : (
+        <div className="flex flex-col gap-4 p-4">
+          <ProgressCard statusCounts={statusCounts} onTriageNext={triageNext} />
+          <PlaylistShelf
             playlists={playlists}
-            onAssign={(uri, playlistId) => doAssign(uri, playlistId, false)}
-            onSkip={(uri) => {
-              doSetStatus(uri, 'skipped');
-              setFocusedTrackUri(null);
-              setTriageIndex(0);
-            }}
-            onDone={() => {
-              setFocusedTrackUri(null);
-              setTriageIndex(0);
-            }}
-            onPlay={doPlay}
-            registerHotkeys={registerHotkeys}
+            selectedPlaylistId={selectedPlaylistId}
+            onSelectPlaylist={handleSelectPlaylist}
+            onCreatePlaylist={createPlaylist}
+            onDeletePlaylist={deletePlaylist}
+            onEditRecipe={setEditingRecipeId}
           />
-        )}
-        {rightMode === 'autosort' && selectedSubPlaylist && (
-          <AutoSortPanel
-            playlistId={selectedSubPlaylist.id}
-            playlistName={selectedSubPlaylist.name}
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+            <CenterTable
+              ref={searchInputRef}
+              tracks={displayedTracks}
+              statusCounts={statusCounts}
+              statusFilter={statusFilter}
+              onStatusFilterChange={handleStatusFilterChange}
+              selection={selection}
+              onToggleSelect={toggleSelect}
+              onClearSelection={() => setSelection(new Set())}
+              onSelectAll={(uris) => setSelection(new Set(uris))}
+              search={search}
+              onSearchChange={setSearch}
+              playlists={playlists}
+              focusedUri={focusedTrackUri}
+              onAssign={doAssign}
+              onUnassign={doUnassign}
+              onSetStatus={doSetStatus}
+              onPlay={doPlay}
+              onFocusTrack={focusTrack}
+            />
+
+            <aside className="w-full shrink-0 rounded-lg border border-line bg-surface lg:w-80">
+              <div className="flex border-b border-line text-sm">
+                <button
+                  onClick={() => setRightMode('inspector')}
+                  className={tabClass(rightMode === 'inspector')}
+                >
+                  Inspector
+                </button>
+                <button
+                  onClick={() => setRightMode('autosort')}
+                  disabled={!selectedSubPlaylist}
+                  className={`${tabClass(rightMode === 'autosort')} disabled:opacity-40`}
+                >
+                  Auto-sort
+                </button>
+              </div>
+              {rightMode === 'inspector' && (
+                <Inspector
+                  track={focusedTrack}
+                  onPlay={doPlay}
+                  onOpenInTriage={() => onModeChange('triage')}
+                />
+              )}
+              {rightMode === 'autosort' && selectedSubPlaylist && (
+                <AutoSortPanel
+                  playlistId={selectedSubPlaylist.id}
+                  playlistName={selectedSubPlaylist.name}
+                  onBulkAssign={doBulkAssign}
+                />
+              )}
+            </aside>
+          </div>
+          <BulkBar
+            selection={selection}
+            playlists={playlists}
             onBulkAssign={doBulkAssign}
+            onBulkUnassign={doBulkUnassign}
+            onSetStatus={doSetStatus}
+            onClearSelection={() => setSelection(new Set())}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {editingPlaylist && (
         <RecipeEditor
@@ -423,7 +488,10 @@ export function Organizer() {
       )}
 
       {toast && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded bg-zinc-800 px-4 py-2 text-sm shadow-lg">
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded bg-ink px-4 py-2 text-sm text-white shadow-lg"
+        >
           {toast}
         </div>
       )}

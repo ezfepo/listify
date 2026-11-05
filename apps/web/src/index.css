@@ -1,1 +1,44 @@
 @import 'tailwindcss';
+
+/* Design tokens — light palette from the Phase 5b mockups. Contrast against
+   `surface`/`ground`: ink 15:1, muted ≥ 5:1, accent and done ≥ 5:1 (white on them too). */
+@theme {
+  --color-ground: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-raise: #eceef2;
+  --color-line: #d9dce3;
+  --color-ink: #151821;
+  --color-muted: #566070;
+  --color-accent: #2257d6;
+  --color-accent-soft: #e4ecfd;
+  --color-done: #146c35;
+  --color-done-soft: #dcf3e3;
+  --color-danger: #b42318;
+
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

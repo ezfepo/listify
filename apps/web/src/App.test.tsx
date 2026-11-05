@@ -3,7 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
-vi.mock('./organizer/Organizer', () => ({ Organizer: () => <div>ORGANIZER VIEW</div> }));
+vi.mock('./organizer/Organizer', () => ({
+  Organizer: ({ mode, onModeChange }: { mode: string; onModeChange: (m: 'triage') => void }) => (
+    <div>
+      ORGANIZER VIEW
+      <span data-testid="mode">{mode}</span>
+      <button onClick={() => onModeChange('triage')}>to-triage</button>
+    </div>
+  ),
+}));
 
 type Handler = (init?: RequestInit) => Response | Promise<Response>;
 
@@ -139,6 +147,42 @@ describe('App: connected', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Setup' }));
     expect(screen.queryByText('ORGANIZER VIEW')).toBeNull();
     await screen.findByText('Main');
+  });
+
+  it('has Setup, Organize, Triage and Sync tabs, with the active one marked', async () => {
+    routeFetch(connectedRoutes);
+    render(<App />);
+    await screen.findByText('Connected as Ada');
+
+    const nav = screen.getByRole('navigation', { name: 'Views' });
+    expect(Array.from(nav.querySelectorAll('button')).map((b) => b.textContent)).toEqual([
+      'Setup',
+      'Organize',
+      'Triage',
+      'Sync',
+    ]);
+    expect(screen.getByRole('button', { name: 'Setup' }).getAttribute('aria-current')).toBe('page');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Triage' }));
+    expect(screen.getByRole('button', { name: 'Triage' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(screen.getByRole('button', { name: 'Setup' }).getAttribute('aria-current')).toBeNull();
+  });
+
+  it('the Triage tab shows the workspace in triage mode, and the workspace can change the view', async () => {
+    routeFetch(connectedRoutes);
+    render(<App />);
+    await screen.findByText('Connected as Ada');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Organize' }));
+    expect(screen.getByTestId('mode').textContent).toBe('organize');
+
+    await userEvent.click(screen.getByRole('button', { name: 'to-triage' }));
+    expect(screen.getByTestId('mode').textContent).toBe('triage');
+    expect(screen.getByRole('button', { name: 'Triage' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
   });
 
   it('still shows an auth error banner when already connected', async () => {
