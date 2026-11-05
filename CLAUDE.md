@@ -56,7 +56,12 @@ listify/
 
 - `npm run dev` — starts server (port 8787) and web (port 5173) together.
 - `npm test` — runs tests across workspaces.
-- `npm run lint` / `npm run format` — ESLint / Prettier.
+- `npm run lint` / `npm run format` / `npm run format:check` — ESLint /
+  Prettier (write) / Prettier (check only, what CI runs).
+- `npm run build` — type-check and build both workspaces.
+
+CI (`.github/workflows/ci.yml`) runs lint, format:check, test and build on
+every PR; all four must pass locally before opening one.
 
 ## Working rules
 
@@ -65,3 +70,29 @@ listify/
 3. Secrets stay in `.env`; never commit them or print them to logs.
 4. Small commits, conventional messages. Tick checkboxes in `plan.md` as
    phases complete.
+
+## Testing conventions
+
+- Vitest; tests sit next to the source (`foo.ts` → `foo.test.ts`).
+- Server: DB tests use the in-memory SQLite set up by `vitest.setup.ts` (never
+  `data/app.db`); routes are tested with Fastify `inject` via
+  `routes/test-app.ts`; Spotify modules are mocked at the `spotify/` boundary.
+- Web: jsdom + Testing Library, `api` mocked at `lib/api`. `react-virtual` is
+  mocked where a table is rendered (jsdom has no layout).
+- New behavior needs tests. Sync/apply code must assert the invariants: nothing
+  leaves Main without a verified Archive copy, `DRY_RUN` writes nothing.
+
+## Claude Code setup (`.claude/`, `.mcp.json`)
+
+- Hooks (`.claude/settings.json`): edits to `.env*` and `data/` are blocked and
+  reads of them denied (`data/app.db` holds Spotify tokens); Prettier runs on
+  every edit. The guard script needs `bash` and `jq` on PATH and **fails
+  closed**: without `jq`, every edit is blocked.
+- Skills: `/phase-check` (close out a `plan.md` phase), `spotify-api-rules`
+  (loaded when touching `server/src/spotify/`).
+- Subagents: `sync-safety-reviewer` (run on any diff touching `sync/`,
+  `spotify/` or routes), `test-writer`.
+- MCP: `context7` for current library docs (Fastify 5, React 19, Tailwind 4,
+  Vite 8, zod 4 post-date most training data).
+- `.claude/settings.local.json` is per-developer and git-ignored (unrelated
+  connectors/skills are switched off there).
