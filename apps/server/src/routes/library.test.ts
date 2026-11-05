@@ -1,8 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../db/index.js';
-import { createSubPlaylist, getPlaylistById, upsertPlaylist } from '../db/playlists.js';
-import { upsertTrack } from '../db/tracks.js';
+import {
+  assignTrackToPlaylist,
+  createSubPlaylist,
+  getPlaylistById,
+  upsertPlaylist,
+} from '../db/playlists.js';
+import { getTrackStatus, setTrackStatus, upsertTrack } from '../db/tracks.js';
 import { libraryRoutes } from './library.js';
 import { buildTestApp } from './test-app.js';
 
@@ -144,6 +149,56 @@ describe('DELETE /api/playlists/:id', () => {
       404,
     );
     expect((await app.inject({ method: 'DELETE', url: '/api/playlists/0' })).statusCode).toBe(400);
+  });
+
+  it('sends a track only assigned to the deleted playlist back to inbox', async () => {
+    upsertTrack(
+      {
+        uri: 'spotify:track:1',
+        name: 'T',
+        artists: 'A',
+        album: null,
+        imageUrl: null,
+        durationMs: null,
+        addedAt: null,
+        isLocal: false,
+        isrc: null,
+      },
+      'inbox',
+    );
+    const playlist = createSubPlaylist({ name: 'Gone' });
+    assignTrackToPlaylist(playlist.id, 'spotify:track:1');
+    setTrackStatus('spotify:track:1', 'organized');
+
+    await app.inject({ method: 'DELETE', url: `/api/playlists/${playlist.id}` });
+
+    expect(getTrackStatus('spotify:track:1')).toBe('inbox');
+  });
+
+  it('leaves a track organized when it is still assigned to another playlist', async () => {
+    upsertTrack(
+      {
+        uri: 'spotify:track:1',
+        name: 'T',
+        artists: 'A',
+        album: null,
+        imageUrl: null,
+        durationMs: null,
+        addedAt: null,
+        isLocal: false,
+        isrc: null,
+      },
+      'inbox',
+    );
+    const gone = createSubPlaylist({ name: 'Gone' });
+    const kept = createSubPlaylist({ name: 'Kept' });
+    assignTrackToPlaylist(gone.id, 'spotify:track:1');
+    assignTrackToPlaylist(kept.id, 'spotify:track:1');
+    setTrackStatus('spotify:track:1', 'organized');
+
+    await app.inject({ method: 'DELETE', url: `/api/playlists/${gone.id}` });
+
+    expect(getTrackStatus('spotify:track:1')).toBe('organized');
   });
 });
 

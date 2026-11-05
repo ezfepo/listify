@@ -44,7 +44,21 @@ describe('config', () => {
       spotifyRedirectUri: 'http://127.0.0.1:9999/cb',
       webOrigin: 'http://127.0.0.1:4000',
       lastfmApiKey: 'lfm-key',
+      dryRun: true,
     });
+  });
+
+  it('defaults dryRun to true, and only the literal string "false" turns it off', async () => {
+    const onByDefault = await loadConfig();
+    expect(onByDefault.config.dryRun).toBe(true);
+
+    vi.stubEnv('DRY_RUN', 'false');
+    const explicitlyOff = await loadConfig();
+    expect(explicitlyOff.config.dryRun).toBe(false);
+
+    vi.stubEnv('DRY_RUN', 'anything-else');
+    const stillOn = await loadConfig();
+    expect(stillOn.config.dryRun).toBe(true);
   });
 
   it('uses loopback (127.0.0.1) defaults for the redirect URI and web origin', async () => {

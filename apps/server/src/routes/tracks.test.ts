@@ -180,11 +180,26 @@ describe('POST /api/tracks/:uri/status', () => {
     expect(listPlaylistIdsForTrack(URI)).toEqual([]);
   });
 
-  it('other statuses just set the status (204)', async () => {
+  it('organized just sets the status (204)', async () => {
     addTrack(URI);
     const res = await post(`/api/tracks/${enc(URI)}/status`, { status: 'organized' });
     expect(res.statusCode).toBe(204);
     expect(getTrackStatus(URI)).toBe('organized');
+  });
+
+  it('resetting to inbox unassigns from every playlist (and un-skips), reporting which, for undo', async () => {
+    addTrack(URI);
+    const a = createSubPlaylist({ name: 'A' });
+    const b = createSubPlaylist({ name: 'B' });
+    assignTrackToPlaylist(a.id, URI);
+    assignTrackToPlaylist(b.id, URI);
+
+    const res = await post(`/api/tracks/${enc(URI)}/status`, { status: 'inbox' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().removedFromPlaylistIds.sort()).toEqual([a.id, b.id].sort());
+    expect(getTrackStatus(URI)).toBe('inbox');
+    expect(listPlaylistIdsForTrack(URI)).toEqual([]);
   });
 
   it('rejects an invalid status and an unknown track', async () => {

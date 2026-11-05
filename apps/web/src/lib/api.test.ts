@@ -149,4 +149,25 @@ describe('api endpoints', () => {
     expect(call(0).method).toBe('PUT');
     expect(call(0).body).toEqual(recipe);
   });
+
+  it('getSyncDiff GETs the diff preview', async () => {
+    await api.getSyncDiff();
+    expect(call(0).url).toBe('/api/sync/diff');
+    expect(call(0).method).toBeUndefined();
+  });
+
+  it('applySync POSTs with no body', async () => {
+    await api.applySync();
+    expect(call(0).url).toBe('/api/sync/apply');
+    expect(call(0).method).toBe('POST');
+    expect(call(0).body).toBeUndefined();
+  });
+
+  it('importSnapshot POSTs the parsed snapshot as the body', async () => {
+    const snapshot = { version: 1, exportedAt: 'now', tables: {}, settings: {} };
+    await api.importSnapshot(snapshot);
+    expect(call(0).url).toBe('/api/import');
+    expect(call(0).method).toBe('POST');
+    expect(call(0).body).toEqual(snapshot);
+  });
 });

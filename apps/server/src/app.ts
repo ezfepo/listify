@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { apiRoutes } from './routes/api.js';
 import { authRoutes } from './routes/auth.js';
 import { enrichRoutes } from './routes/enrich.js';
+import { exportRoutes } from './routes/export.js';
 import { libraryRoutes } from './routes/library.js';
 import { recipeRoutes } from './routes/recipes.js';
 import { setupRoutes } from './routes/setup.js';
@@ -20,6 +21,7 @@ export async function buildApp(options: { logger?: boolean } = {}): Promise<Fast
   await app.register(libraryRoutes);
   await app.register(recipeRoutes);
   await app.register(trackRoutes);
+  await app.register(exportRoutes);
 
   return app;
 }

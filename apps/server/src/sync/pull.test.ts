@@ -121,7 +121,9 @@ vi.mock('../spotify/client.js', () => ({
 
 const { db } = await import('../db/index.js');
 const { setSetting } = await import('../db/settings.js');
-const { upsertPlaylist } = await import('../db/playlists.js');
+const { assignTrackToPlaylist, getPlaylistBySpotifyId, upsertPlaylist } =
+  await import('../db/playlists.js');
+const { getTrackStatus, setTrackStatus, upsertTrack } = await import('../db/tracks.js');
 const { pull, PullSetupError } = await import('./pull.js');
 const { getPlaylistItems } = await import('../spotify/client.js');
 const { LIKED_SONGS_SENTINEL } = await import('../spotify/liked-songs.js');
@@ -161,6 +163,37 @@ describe('pull', () => {
       .prepare('SELECT is_local FROM tracks WHERE uri = ?')
       .get('spotify:local:artist:album:song:123') as { is_local: number };
     expect(row.is_local).toBe(1);
+  });
+
+  it('sends a track back to inbox when it falls out of its only sub-playlist on re-pull', async () => {
+    setSetting('main_playlist_spotify_id', 'main123');
+    setSetting('archive_playlist_spotify_id', 'archive456');
+    upsertPlaylist('sub789', 'Road', 'sub');
+    await pull(); // creates the local 'Road' row and links its one Spotify track
+
+    // A track organized into Road locally, but the Spotify side never got it
+    // (e.g. Apply hasn't run yet) — the next pull's replace should drop it.
+    upsertTrack(
+      {
+        uri: 'spotify:track:99',
+        name: 'Local-only pick',
+        artists: 'A',
+        album: null,
+        imageUrl: null,
+        durationMs: null,
+        addedAt: null,
+        isLocal: false,
+        isrc: null,
+      },
+      'inbox',
+    );
+    const road = getPlaylistBySpotifyId('sub789')!;
+    assignTrackToPlaylist(road.id, 'spotify:track:99');
+    setTrackStatus('spotify:track:99', 'organized');
+
+    await pull();
+
+    expect(getTrackStatus('spotify:track:99')).toBe('inbox');
   });
 
   it('gives new Main tracks inbox status and Archive-only tracks organized status', async () => {
