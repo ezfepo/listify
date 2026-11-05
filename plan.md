@@ -334,7 +334,8 @@ no new dependencies unless a step below says so.
 
 - Implementation notes: the one server touch is read-only: `/api/tracks` now also
   returns `durationMs` and `addedAt` (already stored from Spotify) so the table
-  can show a Time column. IBM Plex loads from Google Fonts via `index.html` (system fallbacks if offline), since `@fontsource`
+  can show a Time column. A "Columns" menu adds optional ones (all audio
+  features, tags, date added, status) and remembers the choice in localStorage. IBM Plex loads from Google Fonts via `index.html` (system fallbacks if offline), since `@fontsource`
   would be a new dependency. Colour token for text is `ink`.
 
 - **Checkpoint:** human triages real songs in both views over a session and

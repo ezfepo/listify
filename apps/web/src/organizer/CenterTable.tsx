@@ -1,23 +1,22 @@
-import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { forwardRef, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  api,
   FEATURE_KEYS,
-  formatDuration,
   type FeatureKey,
   type PlaylistView,
   type StatusCounts,
   type TrackStatus,
   type TrackView,
 } from '../lib/api';
-import { Chip } from '../ui';
+import { COLUMN_DEFS, gridLayout, loadColumns, saveColumns, type ColumnKey } from './columns';
 
-type SortKey = FeatureKey | 'name';
+type SortKey = FeatureKey | 'name' | 'duration' | 'added';
 type SortState = { key: SortKey; dir: 'asc' | 'desc' };
 
 const SORT_LABELS: Record<SortKey, string> = {
   name: 'Title',
+  duration: 'Time',
+  added: 'Date added',
   valence: 'Valence',
   energy: 'Energy',
   danceability: 'Danceability',
@@ -56,24 +55,7 @@ interface CenterTableProps {
 }
 
 const ROW_HEIGHT = 48;
-const COLUMNS =
-  'grid grid-cols-[1.5rem_2rem_minmax(11rem,2fr)_minmax(7rem,1fr)_minmax(8rem,1.5fr)_minmax(7rem,1fr)_3.5rem_3.5rem_3.5rem_10rem] items-center gap-2';
-
-function SuggestedCell({ track }: { track: TrackView }) {
-  const { data = [] } = useQuery({
-    queryKey: ['suggestions', track.uri],
-    queryFn: () => api.getTrackSuggestions(track.uri),
-    staleTime: 60_000,
-  });
-  const assigned = new Set(track.playlists.map((p) => p.id));
-  const best = data.find((s) => s.score > 0 && !assigned.has(s.playlistId));
-  if (!best) return <span className="text-xs text-muted">—</span>;
-  return (
-    <Chip tone="accent" className="max-w-full truncate">
-      {best.playlistName} {best.score}
-    </Chip>
-  );
-}
+const ROW_CLASS = 'grid items-center gap-2';
 
 export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(function CenterTable(
   {
@@ -98,6 +80,14 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
   searchInputRef,
 ) {
   const [sort, setSort] = useState<SortState | null>(null);
+  const [columnKeys, setColumnKeys] = useState<ColumnKey[]>(loadColumns);
+  useEffect(() => saveColumns(columnKeys), [columnKeys]);
+  const activeColumns = COLUMN_DEFS.filter((c) => columnKeys.includes(c.key));
+  const layout = gridLayout(activeColumns);
+  const columnCtx = { onUnassign };
+  function toggleColumn(key: ColumnKey) {
+    setColumnKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
   const subPlaylists = playlists.filter((p) => p.kind === 'sub');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -106,8 +96,17 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
     const factor = sort.dir === 'asc' ? 1 : -1;
     return [...tracks].sort((a, b) => {
       if (sort.key === 'name') return factor * a.name.localeCompare(b.name);
-      const av = a.features?.[sort.key];
-      const bv = b.features?.[sort.key];
+      const sortKey = sort.key;
+      const value = (t: TrackView): number | undefined =>
+        sortKey === 'duration'
+          ? (t.durationMs ?? undefined)
+          : sortKey === 'added'
+            ? t.addedAt
+              ? Date.parse(t.addedAt)
+              : undefined
+            : t.features?.[sortKey];
+      const av = value(a);
+      const bv = value(b);
       if (av === undefined && bv === undefined) return 0;
       if (av === undefined) return 1;
       if (bv === undefined) return -1;
@@ -163,6 +162,23 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
           aria-label="Search"
           className="w-64 min-w-0 rounded border border-line bg-surface px-2 py-1.5 text-sm"
         />
+        <details className="relative text-sm">
+          <summary className="cursor-pointer list-none rounded border border-line px-2 py-1.5">
+            Columns
+          </summary>
+          <div className="absolute left-0 z-20 mt-1 grid w-56 gap-1 rounded-lg border border-line bg-surface p-2 shadow-lg">
+            {COLUMN_DEFS.map((c) => (
+              <label key={c.key} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={columnKeys.includes(c.key)}
+                  onChange={() => toggleColumn(c.key)}
+                />
+                {c.title ?? c.label}
+              </label>
+            ))}
+          </div>
+        </details>
         <div className="ml-auto flex items-center gap-1 text-sm">
           <label className="text-muted" htmlFor="sort-key">
             Sort
@@ -175,6 +191,8 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
           >
             <option value="">Default order</option>
             <option value="name">{SORT_LABELS.name}</option>
+            <option value="duration">{SORT_LABELS.duration}</option>
+            <option value="added">{SORT_LABELS.added}</option>
             {FEATURE_KEYS.map((k) => (
               <option key={k} value={k}>
                 {SORT_LABELS[k]}
@@ -203,9 +221,10 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
         className="overflow-auto"
         style={{ height: 'max(20rem, calc(100vh - 22rem))' }}
       >
-        <div className="min-w-[56rem]">
+        <div style={{ minWidth: `${layout.minWidthRem}rem` }}>
           <div
-            className={`${COLUMNS} sticky top-0 z-10 border-b border-line bg-surface px-2 py-1.5 text-xs text-muted`}
+            style={{ gridTemplateColumns: layout.template }}
+            className={`${ROW_CLASS} sticky top-0 z-10 border-b border-line bg-surface px-2 py-1.5 text-xs text-muted`}
           >
             <input
               type="checkbox"
@@ -221,12 +240,11 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
             />
             <span />
             <span>Title / Artist</span>
-            <span>Album</span>
-            <span>Playlists</span>
-            <span>Suggested</span>
-            <span title="valence / energy">Energy</span>
-            <span>BPM</span>
-            <span>Time</span>
+            {activeColumns.map((c) => (
+              <span key={c.key} title={c.title}>
+                {c.label}
+              </span>
+            ))}
             <span />
           </div>
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
@@ -245,8 +263,9 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
                     width: '100%',
                     height: virtualRow.size,
                     transform: `translateY(${virtualRow.start}px)`,
+                    gridTemplateColumns: layout.template,
                   }}
-                  className={`${COLUMNS} border-b border-line px-2 text-sm ${
+                  className={`${ROW_CLASS} border-b border-line px-2 text-sm ${
                     selected ? 'bg-accent-soft' : focused ? 'bg-raise' : 'hover:bg-ground'
                   }`}
                 >
@@ -271,29 +290,11 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
                     <div className="truncate">{track.name}</div>
                     <div className="truncate text-xs text-muted">{track.artists}</div>
                   </button>
-                  <span className="truncate text-xs text-muted">{track.album ?? '—'}</span>
-                  <div className="flex flex-wrap gap-1 overflow-hidden">
-                    {track.playlists.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => onUnassign(track.uri, p.id)}
-                        title="Click to unassign"
-                        className="rounded-full bg-raise px-2 text-xs hover:bg-danger hover:text-white"
-                      >
-                        {p.name}
-                      </button>
-                    ))}
-                  </div>
-                  <SuggestedCell track={track} />
-                  <span className="font-mono text-xs tabular-nums text-muted">
-                    {track.features?.energy !== undefined ? track.features.energy.toFixed(2) : '—'}
-                  </span>
-                  <span className="font-mono text-xs tabular-nums text-muted">
-                    {track.features?.tempo !== undefined ? Math.round(track.features.tempo) : '—'}
-                  </span>
-                  <span className="font-mono text-xs tabular-nums text-muted">
-                    {formatDuration(track.durationMs)}
-                  </span>
+                  {activeColumns.map((c) => (
+                    <div key={c.key} className="min-w-0">
+                      {c.cell(track, columnCtx)}
+                    </div>
+                  ))}
                   <div className="flex items-center justify-end gap-1">
                     <select
                       defaultValue=""

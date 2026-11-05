@@ -109,6 +109,7 @@ function rowFor(name: string): HTMLElement {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   getTrackSuggestions.mockReset();
   getTrackSuggestions.mockResolvedValue([]);
 });
@@ -320,11 +321,10 @@ describe('CenterTable selection', () => {
   it('toggles selection through the row checkbox and reflects selected state', async () => {
     const { mocks } = setup({ selection: new Set(['spotify:track:2']) });
 
-    // boxes[0] is the "select all" header checkbox; row checkboxes follow.
-    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
-    expect(boxes.slice(1).map((b) => b.checked)).toEqual([false, true, false]);
+    const boxes = screen.getAllByRole('checkbox', { name: /^Select Track/ }) as HTMLInputElement[];
+    expect(boxes.map((b) => b.checked)).toEqual([false, true, false]);
 
-    await userEvent.click(boxes[1]!);
+    await userEvent.click(boxes[0]!);
     expect(mocks.onToggleSelect).toHaveBeenCalledWith('spotify:track:1');
   });
 
@@ -357,5 +357,80 @@ describe('CenterTable selection', () => {
   it('select-all shows indeterminate when only some visible tracks are selected', () => {
     setup({ selection: new Set(['spotify:track:2']) });
     expect((screen.getByTitle('Select all') as HTMLInputElement).indeterminate).toBe(true);
+  });
+});
+
+describe('CenterTable columns', () => {
+  const rich = track(1, {
+    album: 'Alb',
+    durationMs: 200000,
+    addedAt: '2026-03-04T10:00:00Z',
+    status: 'organized',
+    features: { valence: 0.11, danceability: 0.22, loudness: -7.46 },
+    tags: [
+      { tag: 'pop', weight: 90, source: 'lastfm' },
+      { tag: 'pop', weight: 50, source: 'other' },
+      { tag: 'dance', weight: 40, source: 'lastfm' },
+    ],
+  });
+
+  async function pick(label: string) {
+    await userEvent.click(screen.getByText('Columns'));
+    await userEvent.click(screen.getByRole('checkbox', { name: label }));
+  }
+
+  it('hides the extra columns by default', () => {
+    setup({ tracks: [rich] });
+    expect(within(rowFor('Track 1')).queryByText('0.11')).toBeNull();
+    expect(within(rowFor('Track 1')).queryByText('2026-03-04')).toBeNull();
+  });
+
+  it('lets you add feature columns, tags, date added and status', async () => {
+    setup({ tracks: [rich] });
+    await pick('Valence');
+    await pick('Danceability');
+    await pick('Loudness');
+    await pick('Tags');
+    await pick('Added');
+    await pick('Status');
+
+    const row = within(rowFor('Track 1'));
+    expect(row.queryByText('0.11')).not.toBeNull();
+    expect(row.queryByText('0.22')).not.toBeNull();
+    expect(row.queryByText('-7.5 dB')).not.toBeNull();
+    expect(row.queryByText('2026-03-04')).not.toBeNull();
+    expect(row.queryByText('Organized')).not.toBeNull();
+    expect(row.getAllByText('pop')).toHaveLength(1); // de-duplicated across sources
+    expect(row.queryByText('dance')).not.toBeNull();
+  });
+
+  it('can hide a default column, and remembers the choice', async () => {
+    const first = setup({ tracks: [rich] });
+    expect(within(rowFor('Track 1')).queryByText('Alb')).not.toBeNull();
+    await pick('Album');
+    expect(within(rowFor('Track 1')).queryByText('Alb')).toBeNull();
+    first.unmount();
+
+    setup({ tracks: [rich] });
+    expect(within(rowFor('Track 1')).queryByText('Alb')).toBeNull();
+  });
+
+  it('falls back to the defaults when the stored choice is unreadable', () => {
+    window.localStorage.setItem('listify.columns', '{not json');
+    setup({ tracks: [rich] });
+    expect(within(rowFor('Track 1')).queryByText('Alb')).not.toBeNull();
+  });
+
+  it('sorts by duration and by date added', async () => {
+    const tracks = [
+      track(1, { name: 'A', durationMs: 100000, addedAt: '2026-01-01T00:00:00Z' }),
+      track(2, { name: 'B', durationMs: 300000, addedAt: '2025-01-01T00:00:00Z' }),
+      track(3, { name: 'C' }),
+    ];
+    setup({ tracks });
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), 'Time');
+    expect(rowNames()).toEqual(['B', 'A', 'C']);
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), 'Date added');
+    expect(rowNames()).toEqual(['A', 'B', 'C']);
   });
 });
