@@ -282,9 +282,11 @@ three-pane layout.
   `DELETE /me/tracks` (IDs, chunked by 50). Cover both paths in `apply()`'s tests.
 - [x] JSON snapshot + `Export JSON` / `Import JSON` of the whole DB.
 
-- **Checkpoint (not yet done — needs a human):** review the dry-run log for a
-  real batch (Sync tab → Preview Diff / Apply with `DRY_RUN=true`) and confirm
-  it looks right. Commit once confirmed.
+- **Checkpoint:** human reviewed the dry-run log for a real batch (Sync tab →
+  Preview Diff / Apply with `DRY_RUN=true`): 2 playlists created, 3+5 tracks
+  added (one shared between both playlists, correctly deduped to 7 unique
+  tracks added to Archive / removed from Main), backup written. Confirmed
+  correct. Commit.
 
 ### Phase 6 — Go live, carefully
 
