@@ -15,6 +15,10 @@ import { useUndoStack } from './useUndoStack';
 type RightMode = 'inspector' | 'autosort';
 export type WorkspaceMode = 'organize' | 'triage';
 
+function isInteractiveTarget(el: EventTarget | null): boolean {
+  return el instanceof HTMLElement && el.closest('button, a, select, summary') !== null;
+}
+
 function isTypingTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
@@ -50,6 +54,8 @@ export function Organizer({ mode, onModeChange }: OrganizerProps) {
   const [toast, setToast] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const hotkeysRef = useRef<TriageHotkeys | null>(null);
+  const editingRecipeIdRef = useRef<number | null>(null);
+  editingRecipeIdRef.current = editingRecipeId;
 
   const library = useQuery({ queryKey: ['library'], queryFn: api.getLibrary });
   const tracks = useQuery({
@@ -65,6 +71,13 @@ export function Organizer({ mode, onModeChange }: OrganizerProps) {
     // instead of unmounting the table (and its focused search input) on every keystroke.
     placeholderData: (previous) => previous,
   });
+  // Assigning moves a song out of the inbox. In Triage the current song must stay
+  // findable (so further assignments land on it), whatever filter Organize has.
+  const allTracks = useQuery({
+    queryKey: ['tracks', 'all', ''],
+    queryFn: () => api.getTracks({}),
+    enabled: mode === 'triage',
+  });
   const inboxTracks = useQuery({
     queryKey: ['tracks', 'inbox-queue'],
     queryFn: () => api.getTracks({ status: 'inbox' }),
@@ -73,6 +86,7 @@ export function Organizer({ mode, onModeChange }: OrganizerProps) {
   const playlists: PlaylistView[] = library.data?.playlists ?? [];
   const trackList = tracks.data?.items ?? [];
   const inboxList = inboxTracks.data?.items ?? [];
+  const allList = allTracks.data?.items ?? [];
 
   const displayedTracks = useMemo(() => {
     if (selectedPlaylistId === 'main') return trackList.filter((t) => t.inMain);
@@ -84,7 +98,7 @@ export function Organizer({ mode, onModeChange }: OrganizerProps) {
   }, [trackList, selectedPlaylistId]);
 
   const focusedTrack = focusedTrackUri
-    ? [...trackList, ...inboxList].find((t) => t.uri === focusedTrackUri)
+    ? [...trackList, ...inboxList, ...allList].find((t) => t.uri === focusedTrackUri)
     : undefined;
   const currentTriageTrack =
     focusedTrack ?? inboxList[Math.min(triageIndex, Math.max(inboxList.length - 1, 0))];
@@ -297,6 +311,9 @@ export function Organizer({ mode, onModeChange }: OrganizerProps) {
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       if (isTypingTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (editingRecipeIdRef.current !== null) return; // a dialog is open
+      // Enter/Space on a focused button, link or menu must keep their normal meaning.
+      if ((e.key === 'Enter' || e.key === ' ') && isInteractiveTarget(e.target)) return;
 
       if (e.key === 't') {
         e.preventDefault();
@@ -376,6 +393,8 @@ export function Organizer({ mode, onModeChange }: OrganizerProps) {
     ? inboxList.findIndex((t) => t.uri === currentTriageTrack.uri)
     : -1;
   const upNext = triageIndexInQueue >= 0 ? inboxList.slice(triageIndexInQueue + 1) : inboxList;
+  // Deselecting the playlist leaves nothing to auto-sort: fall back to the inspector.
+  const activeRightMode: RightMode = selectedSubPlaylist ? rightMode : 'inspector';
   const tabClass = (active: boolean) =>
     `flex-1 px-3 py-2 ${active ? 'border-b-2 border-accent font-medium' : 'text-muted'}`;
 
@@ -390,7 +409,16 @@ export function Organizer({ mode, onModeChange }: OrganizerProps) {
           history={history}
           onUndo={() => void undo()}
           onSelectTrack={setFocusedTrackUri}
-          onAssign={(uri, playlistId) => doAssign(uri, playlistId, false)}
+          onAssign={(uri, playlistId) => {
+            // Assigning takes the song out of the inbox: pin it so the next
+            // assignment (e.g. key 2 after key 1) still lands on this song.
+            setFocusedTrackUri(uri);
+            void doAssign(uri, playlistId);
+          }}
+          onUnassign={(uri, playlistId) => {
+            setFocusedTrackUri(uri);
+            void doUnassign(uri, playlistId);
+          }}
           onSkip={(uri) => {
             doSetStatus(uri, 'skipped');
             setFocusedTrackUri(null);
@@ -440,26 +468,26 @@ export function Organizer({ mode, onModeChange }: OrganizerProps) {
               <div className="flex border-b border-line text-sm">
                 <button
                   onClick={() => setRightMode('inspector')}
-                  className={tabClass(rightMode === 'inspector')}
+                  className={tabClass(activeRightMode === 'inspector')}
                 >
                   Inspector
                 </button>
                 <button
                   onClick={() => setRightMode('autosort')}
                   disabled={!selectedSubPlaylist}
-                  className={`${tabClass(rightMode === 'autosort')} disabled:opacity-40`}
+                  className={`${tabClass(activeRightMode === 'autosort')} disabled:opacity-40`}
                 >
                   Auto-sort
                 </button>
               </div>
-              {rightMode === 'inspector' && (
+              {activeRightMode === 'inspector' && (
                 <Inspector
                   track={focusedTrack}
                   onPlay={doPlay}
                   onOpenInTriage={() => onModeChange('triage')}
                 />
               )}
-              {rightMode === 'autosort' && selectedSubPlaylist && (
+              {activeRightMode === 'autosort' && selectedSubPlaylist && (
                 <AutoSortPanel
                   playlistId={selectedSubPlaylist.id}
                   playlistName={selectedSubPlaylist.name}
@@ -490,7 +518,7 @@ export function Organizer({ mode, onModeChange }: OrganizerProps) {
       {toast && (
         <div
           role="status"
-          className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded bg-ink px-4 py-2 text-sm text-white shadow-lg"
+          className="fixed bottom-20 left-1/2 z-30 -translate-x-1/2 rounded bg-ink px-4 py-2 text-sm text-white shadow-lg"
         >
           {toast}
         </div>

@@ -85,6 +85,24 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
   const activeColumns = COLUMN_DEFS.filter((c) => columnKeys.includes(c.key));
   const layout = gridLayout(activeColumns);
   const columnCtx = { onUnassign };
+  const columnsMenuRef = useRef<HTMLDetailsElement>(null);
+  // Close the Columns menu on an outside click or Escape.
+  useEffect(() => {
+    function close(e: Event) {
+      const menu = columnsMenuRef.current;
+      if (!menu?.open) return;
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !menu.contains(e.target as Node)) {
+        menu.open = false;
+      }
+    }
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, []);
+
   function toggleColumn(key: ColumnKey) {
     setColumnKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   }
@@ -162,7 +180,7 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
           aria-label="Search"
           className="w-64 min-w-0 rounded border border-line bg-surface px-2 py-1.5 text-sm"
         />
-        <details className="relative text-sm">
+        <details ref={columnsMenuRef} className="relative text-sm">
           <summary className="cursor-pointer list-none rounded border border-line px-2 py-1.5">
             Columns
           </summary>
@@ -218,6 +236,9 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
 
       <div
         ref={scrollRef}
+        role="region"
+        aria-label="Songs"
+        tabIndex={0}
         className="overflow-auto"
         style={{ height: 'max(20rem, calc(100vh - 22rem))' }}
       >

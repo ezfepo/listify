@@ -15,6 +15,7 @@ interface TriageViewProps {
   onUndo: () => void;
   onSelectTrack: (uri: string) => void;
   onAssign: (uri: string, playlistId: number) => void;
+  onUnassign: (uri: string, playlistId: number) => void;
   onSkip: (uri: string) => void;
   onDone: () => void;
   onPlay: (uri: string) => void;
@@ -22,6 +23,12 @@ interface TriageViewProps {
 }
 
 const RAIL_SIZE = 8;
+
+// After a mouse click, drop focus so Enter/Space go to the triage hotkeys (Done / Play)
+// instead of re-activating the button that was just clicked. Keyboard activation keeps focus.
+const pointerBlur = {
+  onPointerUp: (e: React.PointerEvent<HTMLElement>) => e.currentTarget.blur(),
+};
 
 function formatTime(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -44,15 +51,17 @@ export function TriageView({
   onUndo,
   onSelectTrack,
   onAssign,
+  onUnassign,
   onSkip,
   onDone,
   onPlay,
   registerHotkeys,
 }: TriageViewProps) {
-  const { targets, assignedIds, assign } = useTriage({
+  const { targets, assignedIds, toggle, acceptSuggestions } = useTriage({
     track,
     playlists,
     onAssign,
+    onUnassign,
     onSkip,
     onDone,
     onPlay,
@@ -73,6 +82,7 @@ export function TriageView({
           {upNext.slice(0, RAIL_SIZE).map((t) => (
             <li key={t.uri}>
               <button
+                {...pointerBlur}
                 onClick={() => onSelectTrack(t.uri)}
                 className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-raise"
               >
@@ -115,6 +125,7 @@ export function TriageView({
                 )}
                 <div className="mt-3 flex flex-wrap justify-center gap-2 text-sm sm:justify-start">
                   <button
+                    {...pointerBlur}
                     onClick={() => onPlay(track.uri)}
                     className="rounded bg-raise px-3 py-1.5 hover:bg-line"
                   >
@@ -177,8 +188,9 @@ export function TriageView({
                   const strong = s.score >= SUGGESTION_THRESHOLD;
                   return (
                     <button
+                      {...pointerBlur}
                       key={s.playlistId}
-                      onClick={() => assign(s.playlistId)}
+                      onClick={() => toggle(s.playlistId)}
                       aria-pressed={assigned}
                       className={`flex min-h-16 flex-col items-start justify-between rounded-lg border p-2 text-left ${
                         assigned
@@ -208,22 +220,21 @@ export function TriageView({
 
             <div className="flex flex-wrap gap-2 border-t border-line pt-3 text-sm">
               <button
+                {...pointerBlur}
                 onClick={() => onSkip(track.uri)}
                 className="flex-1 rounded bg-raise px-3 py-2 hover:bg-line"
               >
                 Skip <Kbd>s</Kbd>
               </button>
               <button
-                onClick={() => {
-                  for (const t of targets) {
-                    if (t.score >= SUGGESTION_THRESHOLD) assign(t.playlistId);
-                  }
-                }}
+                {...pointerBlur}
+                onClick={acceptSuggestions}
                 className="flex-1 rounded bg-accent-soft px-3 py-2 text-accent hover:opacity-80"
               >
                 Accept {SUGGESTION_THRESHOLD}+ <Kbd>a</Kbd>
               </button>
               <button
+                {...pointerBlur}
                 onClick={onDone}
                 className="flex-1 rounded bg-done px-3 py-2 text-white hover:opacity-90"
               >
@@ -243,6 +254,7 @@ export function TriageView({
             Session history
           </h2>
           <button
+            {...pointerBlur}
             onClick={onUndo}
             disabled={history.length === 0}
             className="rounded bg-raise px-2 py-0.5 text-xs hover:bg-line disabled:opacity-40"

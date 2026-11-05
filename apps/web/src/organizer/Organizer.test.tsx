@@ -706,3 +706,131 @@ describe('Organizer cleanup', () => {
     await waitFor(() => expect(screen.queryByText(/Last action/)).toBeNull());
   });
 });
+
+describe('Organizer triage flow robustness', () => {
+  /** Makes assign/unassign behave like the server: assigning moves a track out of the inbox. */
+  function statefulServer() {
+    const memberships = new Map<string, number[]>();
+    const view = (t: TrackView): TrackView => {
+      const ids = memberships.get(t.uri) ?? [];
+      return {
+        ...t,
+        status: ids.length ? 'organized' : t.status,
+        playlists: ids.map((id) => ({ id, name: id === 10 ? 'Chill' : 'Gym' })),
+      };
+    };
+    mocked.getTracks.mockImplementation(async (params = {}) => {
+      const items = ALL.map(view).filter((t) => !params.status || t.status === params.status);
+      return { total: items.length, items };
+    });
+    mocked.assignTrack.mockImplementation(async (uri, id) => {
+      memberships.set(uri, [...(memberships.get(uri) ?? []), id]);
+    });
+    mocked.unassignTrack.mockImplementation(async (uri, id) => {
+      memberships.set(
+        uri,
+        (memberships.get(uri) ?? []).filter((x) => x !== id),
+      );
+    });
+  }
+
+  const TWO = [
+    { playlistId: 10, playlistName: 'Chill', score: 90, reason: 'tags' },
+    { playlistId: 11, playlistName: 'Gym', score: 80, reason: 'energy' },
+  ];
+
+  const tile = (name: RegExp) => screen.getByRole('button', { name, pressed: undefined });
+
+  it('keeps the song on stage after the first assignment, so a second key lands on the same song', async () => {
+    statefulServer();
+    mocked.getTrackSuggestions.mockResolvedValue(TWO);
+    renderOrganizer('triage');
+    await screen.findByText(/90 · tags/);
+
+    await userEvent.keyboard('1');
+    await waitFor(() => expect(tile(/^Chill/).getAttribute('aria-pressed')).toBe('true'));
+    await userEvent.keyboard('2');
+
+    await waitFor(() => expect(mocked.assignTrack).toHaveBeenCalledTimes(2));
+    expect(mocked.assignTrack.mock.calls).toEqual([
+      ['spotify:track:1', 10],
+      ['spotify:track:1', 11],
+    ]);
+    expect(screen.getByRole('heading', { name: 'Track 1' })).toBeTruthy();
+  });
+
+  it('pressing the same number again takes the song out of that playlist', async () => {
+    statefulServer();
+    mocked.getTrackSuggestions.mockResolvedValue(TWO);
+    renderOrganizer('triage');
+    await screen.findByText(/90 · tags/);
+
+    await userEvent.keyboard('1');
+    await waitFor(() => expect(tile(/^Chill/).getAttribute('aria-pressed')).toBe('true'));
+    await userEvent.keyboard('1');
+
+    await waitFor(() => expect(mocked.unassignTrack).toHaveBeenCalledWith('spotify:track:1', 10));
+  });
+
+  it('records triage assignments in the session history, and undo clears the tile', async () => {
+    statefulServer();
+    mocked.getTrackSuggestions.mockResolvedValue(TWO);
+    renderOrganizer('triage');
+    await screen.findByText(/90 · tags/);
+
+    await userEvent.keyboard('1');
+    const history = screen.getByRole('complementary', { name: 'Session history' });
+    await within(history).findByText('Assign to Chill');
+
+    await userEvent.keyboard('u');
+    await waitFor(() => expect(mocked.unassignTrack).toHaveBeenCalledWith('spotify:track:1', 10));
+    await waitFor(() => expect(tile(/^Chill/).getAttribute('aria-pressed')).toBe('false'));
+  });
+
+  it('Enter on a focused button activates that button instead of the Done hotkey', async () => {
+    renderOrganizer('triage');
+    await screen.findByText(/left in inbox/);
+    await userEvent.keyboard('j'); // now on Track 2
+    await waitFor(() =>
+      expect(mocked.getTrackSuggestions).toHaveBeenLastCalledWith('spotify:track:2'),
+    );
+    const play = screen.getByRole('button', { name: /Play/ });
+    play.focus();
+
+    await userEvent.keyboard('{Enter}');
+
+    await waitFor(() => expect(mocked.playTrack).toHaveBeenCalledWith('spotify:track:2'));
+    // Done would have reset to Track 1
+    expect(screen.getByRole('heading', { name: 'Track 2' })).toBeTruthy();
+  });
+
+  it('ignores global hotkeys while the recipe editor is open', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.click(
+      within(shelfButton(/^Chill/).parentElement as HTMLElement).getByTitle('Edit recipe'),
+    );
+    await screen.findByText('Recipe: Chill');
+
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.keyboard('t');
+
+    expect(screen.queryByPlaceholderText(/Search name or artist/)).not.toBeNull();
+  });
+
+  it('falls back to the inspector when the playlist behind Auto-sort is deselected', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.click(shelfButton(/^Gym/));
+    await userEvent.click(screen.getByRole('button', { name: 'Auto-sort' }));
+    await screen.findByText('Auto-sort: Gym');
+
+    await userEvent.click(shelfButton(/^Gym/)); // deselect
+
+    expect(screen.queryByText('Auto-sort: Gym')).toBeNull();
+    expect(screen.queryByText(/Select a song/)).not.toBeNull();
+    expect((screen.getByRole('button', { name: 'Auto-sort' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+});

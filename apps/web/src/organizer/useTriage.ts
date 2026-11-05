@@ -24,6 +24,7 @@ interface UseTriageOptions {
   track: TrackView | undefined;
   playlists: PlaylistView[];
   onAssign: (uri: string, playlistId: number) => void;
+  onUnassign: (uri: string, playlistId: number) => void;
   onSkip: (uri: string) => void;
   onDone: () => void;
   onPlay: (uri: string) => void;
@@ -39,17 +40,16 @@ export function useTriage({
   track,
   playlists,
   onAssign,
+  onUnassign,
   onSkip,
   onDone,
   onPlay,
   registerHotkeys,
 }: UseTriageOptions) {
   const [suggestions, setSuggestions] = useState<PlaylistSuggestion[]>([]);
-  const [assignedIds, setAssignedIds] = useState<Set<number>>(new Set());
   const trackUri = track?.uri;
 
   useEffect(() => {
-    setAssignedIds(new Set());
     if (!trackUri) {
       setSuggestions([]);
       return;
@@ -72,10 +72,27 @@ export function useTriage({
     return [...scored, ...rest].slice(0, MAX_TARGETS);
   }, [suggestions, playlists]);
 
-  function assign(playlistId: number) {
+  // Truth comes from the server (track.playlists), so an undo is reflected here too.
+  const assignedIds = useMemo(
+    () => new Set((track?.playlists ?? []).map((p) => p.id)),
+    [track?.playlists],
+  );
+
+  /** Click / number key: add the track to the playlist, or take it out if already there. */
+  function toggle(playlistId: number) {
     if (!track) return;
-    onAssign(track.uri, playlistId);
-    setAssignedIds((prev) => new Set(prev).add(playlistId));
+    if (assignedIds.has(playlistId)) onUnassign(track.uri, playlistId);
+    else onAssign(track.uri, playlistId);
+  }
+
+  /** Assign every target at or above the threshold that the track isn't in yet. */
+  function acceptSuggestions() {
+    if (!track) return;
+    for (const t of targets) {
+      if (t.score >= SUGGESTION_THRESHOLD && !assignedIds.has(t.playlistId)) {
+        onAssign(track.uri, t.playlistId);
+      }
+    }
   }
 
   useEffect(() => {
@@ -83,27 +100,19 @@ export function useTriage({
       registerHotkeys(null);
       return;
     }
-    function assignTo(playlistId: number) {
-      onAssign(track!.uri, playlistId);
-      setAssignedIds((prev) => new Set(prev).add(playlistId));
-    }
     registerHotkeys({
       togglePlaylist: (index) => {
         const target = targets[index];
-        if (target) assignTo(target.playlistId);
+        if (target) toggle(target.playlistId);
       },
-      acceptSuggestions: () => {
-        for (const t of targets) {
-          if (t.score >= SUGGESTION_THRESHOLD) assignTo(t.playlistId);
-        }
-      },
+      acceptSuggestions,
       openInSpotify: () => window.open(track.uri, '_blank'),
       play: () => onPlay(track.uri),
       markDone: () => onDone(),
       skip: () => onSkip(track.uri),
     });
     return () => registerHotkeys(null);
-  }, [track, targets, onAssign, onDone, onPlay, onSkip, registerHotkeys]);
+  }, [track, targets, assignedIds, onAssign, onUnassign, onDone, onPlay, onSkip, registerHotkeys]);
 
-  return { targets, assignedIds, assign };
+  return { targets, assignedIds, toggle, acceptSuggestions };
 }

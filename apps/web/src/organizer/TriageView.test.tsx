@@ -53,6 +53,7 @@ function setup(overrides: Partial<ComponentProps<typeof TriageView>> = {}) {
     onUndo: vi.fn(),
     onSelectTrack: vi.fn(),
     onAssign: vi.fn(),
+    onUnassign: vi.fn(),
     onSkip: vi.fn(),
     onDone: vi.fn(),
     onPlay: vi.fn(),
@@ -172,15 +173,40 @@ describe('TriageView target grid', () => {
     expect(labels.map((l) => l.match(/PL\d/)?.[0])).toEqual(['PL2', 'PL1', 'PL3']);
   });
 
-  it('clicking a target assigns the track to that playlist and marks it assigned', async () => {
+  it('clicking a target assigns the track to that playlist', async () => {
     getTrackSuggestions.mockResolvedValue([suggestion(2, 75)]);
     const { mocks } = setup({ playlists: [playlist(2)] });
     const button = (await screen.findByText('PL2')).closest('button') as HTMLButtonElement;
 
     await userEvent.click(button);
     expect(mocks.onAssign).toHaveBeenCalledWith('spotify:track:1', 2);
+    expect(mocks.onUnassign).not.toHaveBeenCalled();
+  });
+
+  it('shows a target as assigned from the track itself, and clicking it again unassigns', async () => {
+    getTrackSuggestions.mockResolvedValue([suggestion(2, 75)]);
+    const { mocks } = setup({
+      playlists: [playlist(2)],
+      track: { ...track, playlists: [{ id: 2, name: 'PL2' }] },
+    });
+    const button = (await screen.findByText('PL2')).closest('button') as HTMLButtonElement;
     expect(button.getAttribute('aria-pressed')).toBe('true');
     expect(button.className).toContain('bg-done-soft');
+
+    await userEvent.click(button);
+    expect(mocks.onUnassign).toHaveBeenCalledWith('spotify:track:1', 2);
+    expect(mocks.onAssign).not.toHaveBeenCalled();
+  });
+
+  it('Accept 60+ skips playlists the track is already in', async () => {
+    getTrackSuggestions.mockResolvedValue([suggestion(1, 90), suggestion(2, 80)]);
+    const { mocks } = setup({
+      playlists: [playlist(1), playlist(2)],
+      track: { ...track, playlists: [{ id: 1, name: 'PL1' }] },
+    });
+    await screen.findByText('PL2');
+    await userEvent.click(screen.getByRole('button', { name: /Accept 60\+/ }));
+    expect(mocks.onAssign.mock.calls).toEqual([['spotify:track:1', 2]]);
   });
 
   it('the Accept 60+ button assigns only targets at or above the threshold', async () => {

@@ -374,9 +374,12 @@ describe('CenterTable columns', () => {
     ],
   });
 
-  async function pick(label: string) {
+  /** Opens the Columns menu once and toggles each named column. */
+  async function pick(...labels: string[]) {
     await userEvent.click(screen.getByText('Columns'));
-    await userEvent.click(screen.getByRole('checkbox', { name: label }));
+    for (const label of labels) {
+      await userEvent.click(screen.getByRole('checkbox', { name: label }));
+    }
   }
 
   it('hides the extra columns by default', () => {
@@ -387,12 +390,7 @@ describe('CenterTable columns', () => {
 
   it('lets you add feature columns, tags, date added and status', async () => {
     setup({ tracks: [rich] });
-    await pick('Valence');
-    await pick('Danceability');
-    await pick('Loudness');
-    await pick('Tags');
-    await pick('Added');
-    await pick('Status');
+    await pick('Valence', 'Danceability', 'Loudness', 'Tags', 'Added', 'Status');
 
     const row = within(rowFor('Track 1'));
     expect(row.queryByText('0.11')).not.toBeNull();
