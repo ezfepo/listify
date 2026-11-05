@@ -1,13 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
+  countPlaylistsForTrack,
   createSubPlaylist,
   deleteSubPlaylist,
   getPlaylistById,
   listPlaylistsWithCounts,
+  listTrackUrisForPlaylist,
   updateSubPlaylist,
 } from '../db/playlists.js';
-import { getStatusCounts } from '../db/tracks.js';
+import { getStatusCounts, recomputeStatusFromAssignments } from '../db/tracks.js';
 import { suggestTracksForPlaylist } from '../enrich/suggest.js';
 
 const paramsSchema = z.object({ id: z.coerce.number().int().positive() });
@@ -92,7 +94,14 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
         .send({ error: 'not_deletable', message: 'Only sub-playlists can be deleted.' });
     }
 
+    // The playlist_tracks rows cascade-delete with the playlist, but nothing else
+    // re-syncs status — without this, a track that was only in this playlist is
+    // left 'organized' forever even though it's no longer assigned anywhere.
+    const affectedUris = listTrackUrisForPlaylist(params.data.id);
     deleteSubPlaylist(params.data.id);
+    for (const uri of affectedUris) {
+      recomputeStatusFromAssignments(uri, countPlaylistsForTrack(uri) > 0);
+    }
     return reply.code(204).send();
   });
 

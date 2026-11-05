@@ -1,10 +1,16 @@
 import { getSetting } from '../db/settings.js';
-import { listSubPlaylists, replacePlaylistTracks, upsertPlaylist } from '../db/playlists.js';
+import {
+  countPlaylistsForTrack,
+  listSubPlaylists,
+  replacePlaylistTracks,
+  upsertPlaylist,
+} from '../db/playlists.js';
 import {
   countTracksInArchive,
   countTracksInMain,
   markInArchive,
   markInMain,
+  recomputeStatusFromAssignments,
   resetMembershipFlags,
   upsertTrack,
 } from '../db/tracks.js';
@@ -112,7 +118,13 @@ export async function pull(): Promise<PullSummary> {
       upsertTrack(track, 'organized');
       uris.push(track.uri);
     }
-    replacePlaylistTracks(sub.id, uris);
+    // Spotify is authoritative for an adopted sub-playlist's membership, but
+    // replacing it doesn't by itself fix `status` for a track that fell out —
+    // without this it stays 'organized' forever even if it's now in no playlist.
+    const droppedUris = replacePlaylistTracks(sub.id, uris);
+    for (const uri of droppedUris) {
+      recomputeStatusFromAssignments(uri, countPlaylistsForTrack(uri) > 0);
+    }
     subSummaries.push({ name: sub.name, trackCount: uris.length });
   }
 

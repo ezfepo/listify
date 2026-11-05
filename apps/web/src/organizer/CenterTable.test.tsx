@@ -57,6 +57,7 @@ function setup(overrides: Partial<ComponentProps<typeof CenterTable>> = {}) {
   const mocks = {
     onToggleSelect: vi.fn(),
     onClearSelection: vi.fn(),
+    onSelectAll: vi.fn(),
     onSearchChange: vi.fn(),
     onAssign: vi.fn(),
     onUnassign: vi.fn(),
@@ -209,6 +210,7 @@ describe('CenterTable search', () => {
         selection={new Set()}
         onToggleSelect={vi.fn()}
         onClearSelection={vi.fn()}
+        onSelectAll={vi.fn()}
         search=""
         onSearchChange={mocks.onSearchChange}
         playlists={[]}
@@ -232,11 +234,44 @@ describe('CenterTable selection and bulk actions', () => {
   it('toggles selection through the row checkbox and reflects selected state', async () => {
     const { mocks } = setup({ selection: new Set(['spotify:track:2']) });
 
+    // boxes[0] is the "select all" header checkbox; row checkboxes follow.
     const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
-    expect(boxes.map((b) => b.checked)).toEqual([false, true, false]);
+    expect(boxes.slice(1).map((b) => b.checked)).toEqual([false, true, false]);
 
-    await userEvent.click(boxes[0]!);
+    await userEvent.click(boxes[1]!);
     expect(mocks.onToggleSelect).toHaveBeenCalledWith('spotify:track:1');
+  });
+
+  it('select-all checks every row and selects every visible track', async () => {
+    const { mocks } = setup({ selection: new Set() });
+    const selectAll = screen.getByTitle('Select all') as HTMLInputElement;
+    expect(selectAll.checked).toBe(false);
+
+    await userEvent.click(selectAll);
+
+    expect(mocks.onSelectAll).toHaveBeenCalledWith([
+      'spotify:track:1',
+      'spotify:track:2',
+      'spotify:track:3',
+    ]);
+  });
+
+  it('select-all shows checked when every visible track is already selected, and clears on uncheck', async () => {
+    const { mocks } = setup({
+      selection: new Set(['spotify:track:1', 'spotify:track:2', 'spotify:track:3']),
+    });
+    const selectAll = screen.getByTitle('Select all') as HTMLInputElement;
+    expect(selectAll.checked).toBe(true);
+
+    await userEvent.click(selectAll);
+
+    expect(mocks.onClearSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it('select-all shows indeterminate when only some visible tracks are selected', () => {
+    setup({ selection: new Set(['spotify:track:2']) });
+    const selectAll = screen.getByTitle('Select all') as HTMLInputElement;
+    expect(selectAll.indeterminate).toBe(true);
   });
 
   it('hides the bulk bar until something is selected', () => {
@@ -288,10 +323,33 @@ describe('CenterTable selection and bulk actions', () => {
     expect(mocks.onClearSelection).toHaveBeenCalledTimes(1);
   });
 
+  it('bulk Reset sends every selected track back to inbox and clears the selection', async () => {
+    const { mocks } = setup({ selection: new Set(['spotify:track:1', 'spotify:track:2']) });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
+
+    expect(mocks.onSetStatus.mock.calls).toEqual([
+      ['spotify:track:1', 'inbox'],
+      ['spotify:track:2', 'inbox'],
+    ]);
+    expect(mocks.onClearSelection).toHaveBeenCalledTimes(1);
+  });
+
   it('Clear clears the selection without changing anything', async () => {
     const { mocks } = setup({ selection: new Set(['spotify:track:1']) });
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
     expect(mocks.onClearSelection).toHaveBeenCalledTimes(1);
     expect(mocks.onSetStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('CenterTable row actions', () => {
+  it('the per-row reset button sends that track back to inbox without needing a selection', async () => {
+    const { mocks } = setup();
+    const resetButtons = screen.getAllByTitle(
+      'Reset: unassign from everything and send back to Inbox',
+    );
+    await userEvent.click(resetButtons[0]!);
+    expect(mocks.onSetStatus).toHaveBeenCalledWith('spotify:track:1', 'inbox');
   });
 });

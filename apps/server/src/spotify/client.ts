@@ -19,17 +19,38 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function spotifyGet(accessToken: string, url: string): Promise<unknown> {
+  return spotifyRequest(accessToken, url, 'GET');
+}
+
+/**
+ * Shared request helper for every Spotify write call (POST/DELETE) plus GET,
+ * with the same 429/backoff handling as reads: honors Retry-After, distinguishes
+ * an app-level QUOTA_EXCEEDED (not worth retrying) from a transient rate limit.
+ */
+async function spotifyRequest(
+  accessToken: string,
+  url: string,
+  method: 'GET' | 'POST' | 'DELETE',
+  body?: unknown,
+): Promise<unknown> {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const res = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
 
     if (res.status === 429) {
-      const body = (await res
+      const responseBody = (await res
         .clone()
         .json()
         .catch(() => undefined)) as { error?: { reason?: string } } | undefined;
 
       // QUOTA_EXCEEDED is an app-level cap, not a transient rate limit — retrying won't help.
-      if (body?.error?.reason === 'QUOTA_EXCEEDED') {
+      if (responseBody?.error?.reason === 'QUOTA_EXCEEDED') {
         throw new SpotifyRateLimitError('Spotify app quota exceeded (reason: QUOTA_EXCEEDED)');
       }
       if (attempt >= MAX_429_RETRIES) {
@@ -42,10 +63,15 @@ async function spotifyGet(accessToken: string, url: string): Promise<unknown> {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Spotify API ${url} returned ${res.status}: ${text}`);
+      throw new SpotifyHttpError(
+        res.status,
+        `Spotify API ${method} ${url} returned ${res.status}: ${text}`,
+      );
     }
 
-    return res.json();
+    if (res.status === 204) return undefined;
+    const text = await res.text();
+    return text ? JSON.parse(text) : undefined;
   }
 }
 
@@ -131,4 +157,44 @@ export async function playTrack(accessToken: string, trackUri: string): Promise<
   if (!res.ok) {
     throw new SpotifyHttpError(res.status, `PUT /me/player/play returned ${res.status}`);
   }
+}
+
+/** Creates a new playlist for the current user. Empty until items are added. */
+export async function createPlaylist(accessToken: string, name: string): Promise<{ id: string }> {
+  const body = (await spotifyRequest(accessToken, `${API_BASE}/me/playlists`, 'POST', {
+    name,
+    public: false,
+  })) as { id: string };
+  return body;
+}
+
+/** Adds up to 100 track/episode URIs to a playlist in one call — chunk before calling. */
+export async function addItemsToPlaylist(
+  accessToken: string,
+  playlistId: string,
+  uris: string[],
+): Promise<void> {
+  await spotifyRequest(accessToken, `${API_BASE}/playlists/${playlistId}/items`, 'POST', { uris });
+}
+
+/** Removes up to 100 track/episode URIs from a playlist in one call — chunk before calling. */
+export async function removeItemsFromPlaylist(
+  accessToken: string,
+  playlistId: string,
+  uris: string[],
+): Promise<void> {
+  await spotifyRequest(accessToken, `${API_BASE}/playlists/${playlistId}/items`, 'DELETE', {
+    items: uris.map((uri) => ({ uri })),
+  });
+}
+
+/**
+ * Removes tracks from the current user's Liked Songs ("library"). Verified against
+ * live docs (Sep 2026): the old `DELETE /me/tracks` (track IDs, max 50) is now
+ * deprecated in favor of `DELETE /me/library` (Spotify URIs, max 40) — plan.md's
+ * "chunked by 50, track IDs" is stale; use URIs chunked by 40 instead. Caller chunks.
+ */
+export async function removeSavedTracks(accessToken: string, uris: string[]): Promise<void> {
+  const query = new URLSearchParams({ uris: uris.join(',') });
+  await spotifyRequest(accessToken, `${API_BASE}/me/library?${query.toString()}`, 'DELETE');
 }

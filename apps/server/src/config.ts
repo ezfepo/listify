@@ -28,4 +28,7 @@ export const config = {
   // Free key from https://www.last.fm/api/account/create — Last.fm tag lookups
   // are skipped (not treated as an error) when this isn't set.
   lastfmApiKey: process.env.LASTFM_API_KEY ?? '',
+  // Default ON (plan.md Phase 5) — apply() only logs planned writes until a human
+  // flips this in .env for Phase 6. Anything other than the literal string 'false' is ON.
+  dryRun: process.env.DRY_RUN !== 'false',
 };

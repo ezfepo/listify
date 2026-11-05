@@ -11,6 +11,7 @@ import {
   getTrackStatus,
   listUnassignedCandidateTracks,
   recomputeStatusFromAssignments,
+  resetTrack,
   setTrackStatus,
   skipTrack,
   upsertTrack,
@@ -84,6 +85,33 @@ describe('skipTrack', () => {
     upsertTrack(track('spotify:track:1'), 'inbox');
     expect(skipTrack('spotify:track:1')).toEqual([]);
     expect(getTrackStatus('spotify:track:1')).toBe('skipped');
+  });
+});
+
+describe('resetTrack', () => {
+  it('removes the track from every playlist it was in and marks it inbox', () => {
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    const sad = createSubPlaylist({ name: 'Sad' });
+    const road = createSubPlaylist({ name: 'Road' });
+    assignTrackToPlaylist(sad.id, 'spotify:track:1');
+    assignTrackToPlaylist(road.id, 'spotify:track:1');
+    setTrackStatus('spotify:track:1', 'organized');
+
+    const removed = resetTrack('spotify:track:1');
+
+    expect(removed.sort()).toEqual([sad.id, road.id].sort());
+    expect(listPlaylistIdsForTrack('spotify:track:1')).toEqual([]);
+    expect(getTrackStatus('spotify:track:1')).toBe('inbox');
+  });
+
+  it('un-skips a track — unlike unassigning down to zero, which preserves skip', () => {
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    setTrackStatus('spotify:track:1', 'skipped');
+
+    const removed = resetTrack('spotify:track:1');
+
+    expect(removed).toEqual([]);
+    expect(getTrackStatus('spotify:track:1')).toBe('inbox');
   });
 });
 

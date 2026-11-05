@@ -20,6 +20,7 @@ interface CenterTableProps {
   selection: Set<string>;
   onToggleSelect: (uri: string) => void;
   onClearSelection: () => void;
+  onSelectAll: (uris: string[]) => void;
   search: string;
   onSearchChange: (value: string) => void;
   playlists: PlaylistView[];
@@ -40,6 +41,7 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
     selection,
     onToggleSelect,
     onClearSelection,
+    onSelectAll,
     search,
     onSearchChange,
     playlists,
@@ -150,6 +152,16 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
             >
               Skip
             </button>
+            <button
+              onClick={() => {
+                for (const uri of selection) onSetStatus(uri, 'inbox');
+                onClearSelection();
+              }}
+              title="Unassign from everything and send back to Inbox"
+              className="rounded bg-zinc-700 px-2 py-1"
+            >
+              Reset
+            </button>
             <button onClick={onClearSelection} className="rounded bg-zinc-800 px-2 py-1">
               Clear
             </button>
@@ -158,6 +170,21 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
       </div>
 
       <div className="flex gap-1 border-b border-zinc-800 px-2 py-1 text-xs text-zinc-400">
+        <input
+          type="checkbox"
+          checked={sorted.length > 0 && sorted.every((t) => selection.has(t.uri))}
+          ref={(el) => {
+            if (el) {
+              el.indeterminate = selection.size > 0 && !sorted.every((t) => selection.has(t.uri));
+            }
+          }}
+          onChange={(e) => {
+            if (e.target.checked) onSelectAll(sorted.map((t) => t.uri));
+            else onClearSelection();
+          }}
+          title="Select all"
+          className="shrink-0"
+        />
         <button
           className="w-40 shrink-0 text-left hover:text-white"
           onClick={() => toggleSort('name')}
@@ -249,6 +276,13 @@ export const CenterTable = forwardRef<HTMLInputElement, CenterTableProps>(functi
                       </option>
                     ))}
                   </select>
+                  <button
+                    onClick={() => onSetStatus(track.uri, 'inbox')}
+                    title="Reset: unassign from everything and send back to Inbox"
+                    className="px-1 text-xs hover:text-white"
+                  >
+                    ↺
+                  </button>
                   <button
                     onClick={() => onPlay(track.uri)}
                     title="Play on active device"

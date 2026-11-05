@@ -118,6 +118,23 @@ export function skipTrack(uri: string): number[] {
 }
 
 /**
+ * Resets a track back to square one: removes it from every sub-playlist it's in
+ * and forces status back to 'inbox' — including un-skipping it, which plain
+ * unassign can't do (recomputeStatusFromAssignments deliberately preserves an
+ * explicit skip on the zero-playlists path). Returns the playlist IDs it was
+ * removed from, so a caller can offer undo (re-assign + restore the previous
+ * status), mirroring skipTrack.
+ */
+export function resetTrack(uri: string): number[] {
+  const playlistIds = listPlaylistIdsForTrack(uri);
+  for (const playlistId of playlistIds) {
+    unassignTrackFromPlaylist(playlistId, uri);
+  }
+  setTrackStatus(uri, 'inbox');
+  return playlistIds;
+}
+
+/**
  * Assign/unassign call this after changing a track's sub-playlist memberships, to
  * keep `status` in sync. Assigning to a playlist is a deliberate action, so it
  * always wins over a prior 'skipped' — otherwise a skipped track could never be
@@ -131,6 +148,20 @@ export function recomputeStatusFromAssignments(uri: string, assignedToAnyPlaylis
   }
   if (getTrackStatus(uri) === 'skipped') return;
   setTrackStatus(uri, 'inbox');
+}
+
+/** URIs of every organized (assigned) track that isn't a local file — see sync/diff.ts. */
+export function listOrganizedTrackUris(): string[] {
+  const rows = db
+    .prepare("SELECT uri FROM tracks WHERE status = 'organized' AND is_local = 0")
+    .all() as { uri: string }[];
+  return rows.map((r) => r.uri);
+}
+
+/** URIs of every local-file track — excluded from every sync op (can't be managed by URI). */
+export function listLocalTrackUris(): string[] {
+  const rows = db.prepare('SELECT uri FROM tracks WHERE is_local = 1').all() as { uri: string }[];
+  return rows.map((r) => r.uri);
 }
 
 export function getStatusCounts(): Record<TrackStatus, number> {

@@ -8,6 +8,8 @@ import {
   getPlaylistById,
   listPlaylistIdsForTrack,
   listPlaylistsWithCounts,
+  listTrackUrisForPlaylist,
+  replacePlaylistTracks,
   unassignTrackFromPlaylist,
   updateSubPlaylist,
   upsertPlaylist,
@@ -131,5 +133,32 @@ describe('assignTrackToPlaylist / unassignTrackFromPlaylist', () => {
 
     unassignTrackFromPlaylist(sad.id, 'spotify:track:1');
     expect(listPlaylistIdsForTrack('spotify:track:1')).toEqual([road.id]);
+  });
+});
+
+describe('replacePlaylistTracks', () => {
+  it('replaces the membership and returns which URIs fell out', () => {
+    const sad = createSubPlaylist({ name: 'Sad' });
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    upsertTrack(track('spotify:track:2'), 'inbox');
+    upsertTrack(track('spotify:track:3'), 'inbox');
+    assignTrackToPlaylist(sad.id, 'spotify:track:1');
+    assignTrackToPlaylist(sad.id, 'spotify:track:2');
+
+    const removed = replacePlaylistTracks(sad.id, ['spotify:track:2', 'spotify:track:3']);
+
+    expect(removed).toEqual(['spotify:track:1']);
+    expect(listTrackUrisForPlaylist(sad.id).sort()).toEqual(['spotify:track:2', 'spotify:track:3']);
+  });
+
+  it('returns an empty array when nothing fell out', () => {
+    const sad = createSubPlaylist({ name: 'Sad' });
+    upsertTrack(track('spotify:track:1'), 'inbox');
+    upsertTrack(track('spotify:track:2'), 'inbox');
+    assignTrackToPlaylist(sad.id, 'spotify:track:1');
+
+    const removed = replacePlaylistTracks(sad.id, ['spotify:track:1', 'spotify:track:2']);
+
+    expect(removed).toEqual([]);
   });
 });

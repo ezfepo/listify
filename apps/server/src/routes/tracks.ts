@@ -10,6 +10,7 @@ import {
 import {
   getTrack,
   recomputeStatusFromAssignments,
+  resetTrack,
   setTrackStatus,
   skipTrack,
 } from '../db/tracks.js';
@@ -122,6 +123,13 @@ export async function trackRoutes(app: FastifyInstance): Promise<void> {
 
     if (body.data.status === 'skipped') {
       const removedFromPlaylistIds = skipTrack(uri);
+      return { removedFromPlaylistIds };
+    }
+    if (body.data.status === 'inbox') {
+      // A plain status flip wouldn't unassign the track or lift an explicit skip
+      // (recomputeStatusFromAssignments deliberately preserves skip at zero
+      // playlists) — resetting to inbox is a deliberate "start over" action.
+      const removedFromPlaylistIds = resetTrack(uri);
       return { removedFromPlaylistIds };
     }
     setTrackStatus(uri, body.data.status);
