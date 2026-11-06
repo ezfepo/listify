@@ -108,3 +108,19 @@ describe('BulkBar', () => {
     expect(mocks.onSetStatus).not.toHaveBeenCalled();
   });
 });
+
+describe('BulkBar target picker', () => {
+  it('goes back to disabled when the placeholder is chosen again', async () => {
+    setup();
+    const picker = screen.getByLabelText('Target playlist');
+    await userEvent.selectOptions(picker, 'Chill');
+    expect((screen.getByRole('button', { name: 'Assign' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+
+    await userEvent.selectOptions(picker, 'Playlist…');
+    expect((screen.getByRole('button', { name: 'Assign' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+});

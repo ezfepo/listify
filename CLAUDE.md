@@ -62,6 +62,8 @@ listify/
 - `npm run lint` / `npm run format` / `npm run format:check` — ESLint /
   Prettier (write) / Prettier (check only, what CI runs).
 - `npm run build` — type-check and build both workspaces.
+- `npm run coverage -w apps/web` — web tests with a v8 coverage report
+  (not part of CI).
 
 CI (`.github/workflows/ci.yml`) runs lint, format:check, test and build on
 every PR; all four must pass locally before opening one.

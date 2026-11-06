@@ -432,3 +432,38 @@ describe('CenterTable columns', () => {
     expect(rowNames()).toEqual(['A', 'B', 'C']);
   });
 });
+
+describe('CenterTable details', () => {
+  it('shows cover art when a song has it, and a placeholder otherwise', () => {
+    const { container } = setup({
+      tracks: [track(1, { imageUrl: 'http://img/1.jpg' }), track(2)],
+    });
+    expect(container.querySelectorAll('img')).toHaveLength(1);
+    expect(within(rowFor('Track 2')).queryByText('🎵')).not.toBeNull();
+  });
+
+  it('keeps tracks without the sorted feature together at the end', async () => {
+    setup({ tracks: [track(1), track(2), track(3, { features: { energy: 0.4 } })] });
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), 'Energy');
+    expect(rowNames()).toEqual(['Track 3', 'Track 1', 'Track 2']);
+  });
+
+  it('closes the Columns menu on an outside click and on Escape, but not on a click inside', async () => {
+    setup();
+    const menu = screen.getByText('Columns').closest('details') as HTMLDetailsElement;
+
+    await userEvent.click(screen.getByText('Columns'));
+    expect(menu.open).toBe(true);
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Album' }));
+    expect(menu.open).toBe(true);
+
+    await userEvent.click(document.body);
+    expect(menu.open).toBe(false);
+
+    await userEvent.click(screen.getByText('Columns'));
+    expect(menu.open).toBe(true);
+    await userEvent.keyboard('{Escape}');
+    expect(menu.open).toBe(false);
+  });
+});

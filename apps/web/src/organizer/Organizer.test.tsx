@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -832,5 +832,106 @@ describe('Organizer triage flow robustness', () => {
     expect((screen.getByRole('button', { name: 'Auto-sort' }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+});
+
+describe('Organizer: remaining paths', () => {
+  it('shows a toast when each kind of change fails', async () => {
+    mocked.unassignTrack.mockRejectedValue(new ApiError(500, 'unassign failed'));
+    mocked.bulkAssign.mockRejectedValue(new ApiError(500, 'bulk assign failed'));
+    mocked.bulkUnassign.mockRejectedValue(new ApiError(500, 'bulk unassign failed'));
+    mocked.setTrackStatus.mockRejectedValue(new ApiError(500, 'status failed'));
+    mocked.createPlaylist.mockRejectedValue(new ApiError(500, 'create failed'));
+    mocked.deletePlaylist.mockRejectedValue(new ApiError(500, 'delete failed'));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderOrganizer();
+    await loaded();
+
+    await userEvent.click(within(tableRow('Track 3')).getByTitle('Click to unassign'));
+    await screen.findByText('unassign failed');
+
+    await userEvent.click(within(tableRow('Track 1')).getByTitle(/Reset: unassign/));
+    await screen.findByText('status failed');
+
+    await userEvent.type(screen.getByPlaceholderText('New playlist…'), 'X{Enter}');
+    await screen.findByText('create failed');
+
+    await userEvent.click(
+      within(shelfButton(/^Gym/).parentElement as HTMLElement).getByTitle('Delete playlist'),
+    );
+    await screen.findByText('delete failed');
+
+    await userEvent.click(within(tableRow('Track 1')).getByRole('checkbox'));
+    await userEvent.selectOptions(screen.getByLabelText('Target playlist'), 'Gym');
+    await userEvent.click(screen.getByRole('button', { name: 'Assign' }));
+    await screen.findByText('bulk assign failed');
+
+    await userEvent.selectOptions(screen.getByLabelText('Target playlist'), 'Gym');
+    await userEvent.click(screen.getByRole('button', { name: 'Unassign' }));
+    await screen.findByText('bulk unassign failed');
+  });
+
+  it('bulk unassign removes the selection from the playlist and undo puts it back', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.click(within(tableRow('Track 1')).getByRole('checkbox'));
+    await userEvent.click(within(tableRow('Track 2')).getByRole('checkbox'));
+
+    await userEvent.selectOptions(screen.getByLabelText('Target playlist'), 'Chill');
+    await userEvent.click(screen.getByRole('button', { name: 'Unassign' }));
+
+    await waitFor(() =>
+      expect(mocked.bulkUnassign).toHaveBeenCalledWith(['spotify:track:1', 'spotify:track:2'], 10),
+    );
+    await screen.findByText(/Last action: Unassign 2 from Chill/);
+    await waitFor(() => expect(screen.queryByText(/selected/)).toBeNull());
+
+    await userEvent.keyboard('u');
+    await waitFor(() =>
+      expect(mocked.bulkAssign).toHaveBeenCalledWith(['spotify:track:1', 'spotify:track:2'], 10),
+    );
+  });
+
+  it('a row can be selected and deselected, and the header checkbox selects every row', async () => {
+    renderOrganizer();
+    await loaded();
+    const box = within(tableRow('Track 1')).getByRole('checkbox');
+
+    await userEvent.click(box);
+    expect(screen.queryByText('1 selected')).not.toBeNull();
+    await userEvent.click(box);
+    expect(screen.queryByText(/selected/)).toBeNull();
+
+    await userEvent.click(screen.getByTitle('Select all'));
+    expect(screen.queryByText('3 selected')).not.toBeNull();
+    await userEvent.click(screen.getByTitle('Select all'));
+    expect(screen.queryByText(/selected/)).toBeNull();
+  });
+
+  it('switches between the Inspector and Auto-sort tabs', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.click(shelfButton(/^Gym/));
+    await userEvent.click(screen.getByRole('button', { name: 'Auto-sort' }));
+    await screen.findByText('Auto-sort: Gym');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Inspector' }));
+
+    expect(screen.queryByText('Auto-sort: Gym')).toBeNull();
+    expect(screen.queryByText(/Select a song/)).not.toBeNull();
+  });
+
+  it('handles key presses dispatched on the window itself (not an element)', async () => {
+    renderOrganizer();
+    await loaded();
+    fireEvent.keyDown(window, { key: 't' });
+    expect(screen.queryByPlaceholderText(/Search name or artist/)).toBeNull();
+  });
+
+  it('ignores shortcuts combined with Ctrl, Meta or Alt', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.keyboard('{Control>}t{/Control}');
+    expect(screen.queryByPlaceholderText(/Search name or artist/)).not.toBeNull();
   });
 });

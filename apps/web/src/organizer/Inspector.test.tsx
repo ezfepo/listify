@@ -79,3 +79,16 @@ describe('Inspector', () => {
     );
   });
 });
+
+describe('Inspector cover', () => {
+  it('shows the cover art when the song has one', () => {
+    const { container } = render(
+      <Inspector
+        track={{ ...track, imageUrl: 'http://img/1.jpg' }}
+        onPlay={vi.fn()}
+        onOpenInTriage={vi.fn()}
+      />,
+    );
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('http://img/1.jpg');
+  });
+});

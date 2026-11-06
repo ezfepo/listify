@@ -341,3 +341,14 @@ describe('TriageView queue and history', () => {
     expect(screen.queryByText('No actions yet.')).not.toBeNull();
   });
 });
+
+describe('TriageView covers', () => {
+  it('shows cover art for the current song and the queue when available', () => {
+    const { container } = setup({
+      track: { ...track, imageUrl: 'http://img/1.jpg' },
+      upNext: [{ ...track, uri: 'spotify:track:2', name: 'Two', imageUrl: 'http://img/2.jpg' }],
+    });
+    const sources = Array.from(container.querySelectorAll('img')).map((i) => i.getAttribute('src'));
+    expect(sources).toEqual(expect.arrayContaining(['http://img/1.jpg', 'http://img/2.jpg']));
+  });
+});
