@@ -15,5 +15,14 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    coverage: {
+      provider: 'v8',
+      // Count every source file, including ones no test imports yet.
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/main.tsx', 'src/**/*.d.ts'],
+      reporter: ['text-summary', 'text'],
+      // CI gate (npm run coverage): fails when coverage drops below these.
+      thresholds: { statements: 95, branches: 85, functions: 95, lines: 95 },
+    },
   },
 });
