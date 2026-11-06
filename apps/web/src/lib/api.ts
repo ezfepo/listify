@@ -27,6 +27,8 @@ export interface TrackView {
   artists: string;
   album: string | null;
   imageUrl: string | null;
+  durationMs: number | null;
+  addedAt: string | null;
   isrc: string | null;
   status: TrackStatus;
   inMain: boolean;
@@ -35,6 +37,13 @@ export interface TrackView {
   tags: { tag: string; weight: number; source: string }[];
   enrichment: { source: string; status: string; ts: string }[];
   playlists: { id: number; name: string }[];
+}
+
+/** m:ss for a duration in ms; an em dash when unknown. */
+export function formatDuration(ms: number | null | undefined): string {
+  if (ms == null) return '—';
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
 
 export type PlaylistKind = 'main' | 'archive' | 'sub';

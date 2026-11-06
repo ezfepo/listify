@@ -153,3 +153,13 @@ describe('SyncPanel backup', () => {
     await screen.findByText('import_failed');
   });
 });
+
+describe('SyncPanel import button', () => {
+  it('opens the hidden file picker', async () => {
+    setup();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const click = vi.spyOn(input, 'click');
+    await userEvent.click(screen.getByRole('button', { name: 'Import JSON' }));
+    expect(click).toHaveBeenCalledTimes(1);
+  });
+});

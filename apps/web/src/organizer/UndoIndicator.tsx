@@ -31,8 +31,8 @@ export function UndoIndicatorDisplay() {
   const { topLabel } = useUndoIndicator();
   if (!topLabel) return null;
   return (
-    <span className="text-xs text-zinc-400">
-      Last action: {topLabel} <span className="text-zinc-500">(press u to undo)</span>
+    <span className="text-xs text-muted">
+      Last action: {topLabel} <span className="text-muted">(press u to undo)</span>
     </span>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Organizer } from './organizer/Organizer';
+import { Organizer, type WorkspaceMode } from './organizer/Organizer';
 import { SyncPanel } from './organizer/SyncPanel';
 import { UndoIndicatorDisplay, UndoIndicatorProvider } from './organizer/UndoIndicator';
 
@@ -16,13 +16,6 @@ type PlaylistOption = {
   name: string;
   ownerDisplayName: string | null;
   trackCount: number;
-};
-
-type PullSummary = {
-  mainTrackCount: number;
-  archiveTrackCount: number;
-  subPlaylists: { name: string; trackCount: number }[];
-  skippedEpisodes: number;
 };
 
 function readAuthError(): string | null {
@@ -45,7 +38,6 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
   const [mainId, setMainId] = useState('');
   const [archiveId, setArchiveId] = useState('');
   const [saved, setSaved] = useState(false);
-  const [pullResult, setPullResult] = useState<PullSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -83,12 +75,10 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
   async function runPull() {
     setBusy(true);
     setError(null);
-    setPullResult(null);
     try {
       const res = await fetch('/api/sync/pull', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
-      setPullResult(data);
       onPulled();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -99,16 +89,16 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
 
   if (!playlists) {
     // A failed load must not leave the user on a spinner forever.
-    if (error) return <p className="text-red-400 text-sm">Could not load playlists: {error}</p>;
-    return <p className="text-zinc-400 text-sm">Loading playlists…</p>;
+    if (error) return <p className="text-danger text-sm">Could not load playlists: {error}</p>;
+    return <p className="text-muted text-sm">Loading playlists…</p>;
   }
 
   return (
     <div className="space-y-3 text-sm text-left w-80">
       <label className="block">
-        <span className="text-zinc-400">Main</span>
+        <span className="text-muted">Main</span>
         <select
-          className="mt-1 w-full rounded bg-zinc-900 border border-zinc-700 px-2 py-1"
+          className="mt-1 w-full rounded bg-surface border border-line px-2 py-1"
           value={mainId}
           onChange={(e) => setMainId(e.target.value)}
         >
@@ -121,9 +111,9 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
         </select>
       </label>
       <label className="block">
-        <span className="text-zinc-400">Archive</span>
+        <span className="text-muted">Archive</span>
         <select
-          className="mt-1 w-full rounded bg-zinc-900 border border-zinc-700 px-2 py-1"
+          className="mt-1 w-full rounded bg-surface border border-line px-2 py-1"
           value={archiveId}
           onChange={(e) => setArchiveId(e.target.value)}
         >
@@ -139,33 +129,19 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
         <button
           disabled={!mainId || !archiveId || busy}
           onClick={saveSetup}
-          className="rounded bg-zinc-700 px-3 py-1 disabled:opacity-40"
+          className="rounded bg-raise px-3 py-1 disabled:opacity-40"
         >
           Save
         </button>
         <button
           disabled={!saved || busy}
           onClick={runPull}
-          className="rounded bg-green-600 px-3 py-1 disabled:opacity-40"
+          className="rounded bg-accent text-white px-3 py-1 disabled:opacity-40"
         >
           Pull
         </button>
       </div>
-      {error && <p className="text-red-400">{error}</p>}
-      {pullResult && (
-        <div className="text-green-400">
-          <p>Main: {pullResult.mainTrackCount} tracks</p>
-          <p>Archive: {pullResult.archiveTrackCount} tracks</p>
-          {pullResult.subPlaylists.map((s) => (
-            <p key={s.name}>
-              {s.name}: {s.trackCount} tracks
-            </p>
-          ))}
-          {pullResult.skippedEpisodes > 0 && (
-            <p className="text-zinc-400">Skipped {pullResult.skippedEpisodes} episode(s)</p>
-          )}
-        </div>
-      )}
+      {error && <p className="text-danger">{error}</p>}
     </div>
   );
 }
@@ -175,7 +151,7 @@ export default function App() {
   const [me, setMe] = useState<MeState>({ status: 'loading' });
   const [authError] = useState<string | null>(() => readAuthError());
   const [disconnecting, setDisconnecting] = useState(false);
-  const [view, setView] = useState<'setup' | 'organize' | 'sync'>('setup');
+  const [view, setView] = useState<'setup' | WorkspaceMode | 'sync'>('setup');
 
   useEffect(() => {
     fetch('/api/health')
@@ -226,72 +202,76 @@ export default function App() {
 
   if (me.status !== 'connected') {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center gap-6 py-10">
+      <div className="min-h-screen bg-ground text-ink flex flex-col items-center justify-center gap-6 py-10">
         <div className="text-center space-y-4">
           <h1 className="text-2xl font-semibold">Listify</h1>
           <div className="space-y-2">
-            {health.status === 'loading' && <p className="text-zinc-400">Checking API…</p>}
-            {health.status === 'ok' && <p className="text-green-400">/api/health OK</p>}
+            {health.status === 'loading' && <p className="text-muted">Checking API…</p>}
+            {health.status === 'ok' && <p className="text-done">/api/health OK</p>}
             {health.status === 'error' && (
-              <p className="text-red-400">API error: {health.message}</p>
+              <p className="text-danger">API error: {health.message}</p>
             )}
           </div>
 
           {authError && (
-            <p className="text-red-400 text-sm">Spotify connection failed: {authError}</p>
+            <p className="text-danger text-sm">Spotify connection failed: {authError}</p>
           )}
 
           <div>
-            {me.status === 'loading' && (
-              <p className="text-zinc-400">Checking Spotify connection…</p>
-            )}
+            {me.status === 'loading' && <p className="text-muted">Checking Spotify connection…</p>}
             {me.status === 'disconnected' && (
               <a
                 href="/auth/login"
-                className="inline-block rounded bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-500"
+                className="inline-block rounded bg-accent px-4 py-2 font-medium text-white hover:opacity-90"
               >
                 Connect to Spotify
               </a>
             )}
-            {me.status === 'error' && <p className="text-red-400">API error: {me.message}</p>}
+            {me.status === 'error' && <p className="text-danger">API error: {me.message}</p>}
           </div>
         </div>
       </div>
     );
   }
 
+  const tabs: { key: typeof view; label: string }[] = [
+    { key: 'setup', label: 'Setup' },
+    { key: 'organize', label: 'Organize' },
+    { key: 'triage', label: 'Triage' },
+    { key: 'sync', label: 'Sync' },
+  ];
+
   return (
     <UndoIndicatorProvider>
-      <div className="min-h-screen bg-zinc-950 text-zinc-100">
-        <header className="flex h-16 items-center gap-4 border-b border-zinc-800 px-4">
+      <div className="min-h-screen bg-ground text-ink">
+        <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line bg-surface px-4">
           <h1 className="text-lg font-semibold">Listify</h1>
-          <nav className="flex gap-1">
-            <button
-              onClick={() => setView('setup')}
-              className={`rounded px-3 py-1 text-sm ${view === 'setup' ? 'bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-900'}`}
-            >
-              Setup
-            </button>
-            <button
-              onClick={() => setView('organize')}
-              className={`rounded px-3 py-1 text-sm ${view === 'organize' ? 'bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-900'}`}
-            >
-              Organize
-            </button>
-            <button
-              onClick={() => setView('sync')}
-              className={`rounded px-3 py-1 text-sm ${view === 'sync' ? 'bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-900'}`}
-            >
-              Sync
-            </button>
+          <nav aria-label="Views" className="flex">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setView(tab.key)}
+                aria-current={view === tab.key ? 'page' : undefined}
+                className={`h-14 border-b-2 px-3 text-sm ${
+                  view === tab.key
+                    ? 'border-accent font-medium text-ink'
+                    : 'border-transparent text-muted hover:text-ink'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </nav>
           <UndoIndicatorDisplay />
           <div className="ml-auto flex items-center gap-3 text-sm">
-            <p className="text-green-400">Connected as {me.displayName}</p>
+            <p className="flex items-center gap-1.5 text-done">
+              <span aria-hidden className="h-2 w-2 rounded-full bg-done" />
+              Connected as {me.displayName}
+            </p>
             <button
               onClick={disconnect}
               disabled={disconnecting}
-              className="rounded bg-zinc-700 px-3 py-1 disabled:opacity-40"
+              className="rounded bg-raise px-3 py-1 disabled:opacity-40"
             >
               {disconnecting ? 'Disconnecting…' : 'Disconnect'}
             </button>
@@ -299,7 +279,7 @@ export default function App() {
         </header>
 
         {authError && (
-          <p className="p-2 text-center text-sm text-red-400">
+          <p className="p-2 text-center text-sm text-danger">
             Spotify connection failed: {authError}
           </p>
         )}
@@ -309,7 +289,9 @@ export default function App() {
             <SetupAndPull onPulled={() => setView('organize')} />
           </div>
         )}
-        {view === 'organize' && <Organizer />}
+        {(view === 'organize' || view === 'triage') && (
+          <Organizer mode={view} onModeChange={setView} />
+        )}
         {view === 'sync' && <SyncPanel />}
       </div>
     </UndoIndicatorProvider>

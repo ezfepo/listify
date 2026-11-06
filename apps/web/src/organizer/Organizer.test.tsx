@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, ApiError, type LibraryResponse, type PlaylistView, type TrackView } from '../lib/api';
-import { Organizer } from './Organizer';
+import { Organizer, type WorkspaceMode } from './Organizer';
 import { UndoIndicatorDisplay, UndoIndicatorProvider } from './UndoIndicator';
 
 vi.mock('@tanstack/react-virtual', () => ({
@@ -51,6 +52,8 @@ function track(n: number, overrides: Partial<TrackView> = {}): TrackView {
     artists: `Artist ${n}`,
     album: null,
     imageUrl: null,
+    durationMs: null,
+    addedAt: null,
     isrc: null,
     status: 'inbox',
     inMain: true,
@@ -102,38 +105,46 @@ const LIBRARY: LibraryResponse = {
   statusCounts: { inbox: 2, organized: 1, skipped: 0 },
 };
 
-function tree(client: QueryClient, withOrganizer = true) {
+function Harness({ initialMode }: { initialMode: WorkspaceMode }) {
+  const [mode, setMode] = useState<WorkspaceMode>(initialMode);
+  return <Organizer mode={mode} onModeChange={setMode} />;
+}
+
+function tree(client: QueryClient, withOrganizer = true, initialMode: WorkspaceMode = 'organize') {
   return (
     <QueryClientProvider client={client}>
       <UndoIndicatorProvider>
         <UndoIndicatorDisplay />
-        {withOrganizer && <Organizer />}
+        {withOrganizer && <Harness initialMode={initialMode} />}
       </UndoIndicatorProvider>
     </QueryClientProvider>
   );
 }
 
-function renderOrganizer() {
+function renderOrganizer(initialMode: WorkspaceMode = 'organize') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = render(tree(client));
+  const view = render(tree(client, true, initialMode));
   return { ...view, removeOrganizer: () => view.rerender(tree(client, false)) };
 }
 
+/** Playlist tiles live in the shelf; table rows also have playlist chips with the same names. */
+function shelfButton(name: RegExp): HTMLElement {
+  return within(screen.getByRole('group', { name: 'Playlists' })).getByRole('button', { name });
+}
+
 function tableRow(name: string): HTMLElement {
-  const button = screen.getAllByTitle('View in Triage').find((b) => b.textContent?.includes(name));
+  const button = screen.getAllByTitle('Inspect song').find((b) => b.textContent?.includes(name));
   if (!button) throw new Error(`no table row for ${name}`);
   return button.closest('[style*="position: absolute"]') as HTMLElement;
 }
 
 function tableNames(): string[] {
-  return screen
-    .getAllByTitle('View in Triage')
-    .map((b) => b.querySelector('div')?.textContent ?? '');
+  return screen.getAllByTitle('Inspect song').map((b) => b.querySelector('div')?.textContent ?? '');
 }
 
 async function loaded() {
   await screen.findByText('Main – Archive');
-  await waitFor(() => expect(screen.queryAllByTitle('View in Triage').length).toBeGreaterThan(0));
+  await waitFor(() => expect(screen.queryAllByTitle('Inspect song').length).toBeGreaterThan(0));
 }
 
 beforeEach(() => {
@@ -168,14 +179,27 @@ afterEach(() => {
 });
 
 describe('Organizer loading and layout', () => {
-  it('shows a loading message, then the library, tracks and the triage queue', async () => {
+  it('shows a loading message, then the library and tracks', async () => {
     renderOrganizer();
     expect(screen.queryByText(/Loading your library/)).not.toBeNull();
 
     await loaded();
     expect(tableNames()).toEqual(['Track 1', 'Track 2', 'Track 3']);
-    // Triage starts on the first inbox track
-    expect(screen.queryByText(/2 left in inbox/)).not.toBeNull();
+  });
+
+  it('shows the progress card from the library status counts (1 of 3 organized = 33%)', async () => {
+    renderOrganizer();
+    await loaded();
+    expect(screen.queryByText('33%')).not.toBeNull();
+    expect(
+      screen.getByRole('progressbar', { name: 'Organized' }).getAttribute('aria-valuenow'),
+    ).toBe('33');
+  });
+
+  it('triage mode starts on the first inbox track', async () => {
+    renderOrganizer('triage');
+    await screen.findByText(/2 left in inbox/);
+    expect(screen.getByRole('heading', { name: 'Track 1' })).toBeTruthy();
   });
 });
 
@@ -197,7 +221,7 @@ describe('Organizer filtering', () => {
     await userEvent.click(screen.getByRole('button', { name: /Inbox/ }));
     await waitFor(() => expect(tableNames()).toEqual(['Track 1', 'Track 2']));
 
-    await userEvent.click(screen.getByRole('button', { name: /^Chill/ }));
+    await userEvent.click(shelfButton(/^Chill/));
     await waitFor(() => expect(tableNames()).toEqual(['Track 3']));
     expect(mocked.getTracks).toHaveBeenLastCalledWith({ status: undefined, q: undefined });
   });
@@ -206,17 +230,17 @@ describe('Organizer filtering', () => {
     renderOrganizer();
     await loaded();
 
-    await userEvent.click(screen.getByRole('button', { name: /^Main\s*2$/ }));
+    await userEvent.click(shelfButton(/^Main\s*2$/));
     expect(tableNames()).toEqual(['Track 1', 'Track 2']);
 
-    await userEvent.click(screen.getByRole('button', { name: /Archive/ }));
+    await userEvent.click(shelfButton(/Archive/));
     expect(tableNames()).toEqual(['Track 3']);
   });
 
   it('clicking the selected playlist again returns to the full list', async () => {
     renderOrganizer();
     await loaded();
-    const chill = screen.getByRole('button', { name: /^Chill/ });
+    const chill = shelfButton(/^Chill/);
 
     await userEvent.click(chill);
     await userEvent.click(chill);
@@ -279,7 +303,7 @@ describe('Organizer assign / unassign with undo', () => {
     await userEvent.click(within(tableRow('Track 2')).getByRole('checkbox'));
     expect(screen.queryByText('2 selected')).not.toBeNull();
 
-    await userEvent.selectOptions(screen.getByDisplayValue('Playlist…'), 'Gym');
+    await userEvent.selectOptions(screen.getByLabelText('Target playlist'), 'Gym');
     await userEvent.click(screen.getByRole('button', { name: 'Assign' }));
 
     await waitFor(() =>
@@ -305,10 +329,10 @@ describe('Organizer assign / unassign with undo', () => {
 
 describe('Organizer skipping', () => {
   it('skipping from triage marks the track skipped', async () => {
-    renderOrganizer();
-    await loaded();
+    renderOrganizer('triage');
+    await screen.findByText(/2 left in inbox/);
 
-    await userEvent.click(screen.getByRole('button', { name: /Skip \(s\)/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Skip/ }));
 
     await waitFor(() =>
       expect(mocked.setTrackStatus).toHaveBeenCalledWith('spotify:track:1', 'skipped'),
@@ -357,8 +381,8 @@ describe('Organizer keyboard shortcuts', () => {
   });
 
   it('j / k move through the inbox queue in triage', async () => {
-    renderOrganizer();
-    await loaded();
+    renderOrganizer('triage');
+    await screen.findByText(/left in inbox/);
     const panelTitle = () => screen.getAllByText(/^Track \d$/).map((n) => n.textContent);
     expect(panelTitle()).toContain('Track 1');
 
@@ -377,8 +401,8 @@ describe('Organizer keyboard shortcuts', () => {
   });
 
   it('"s" skips the current triage track and "Enter" advances back to the start', async () => {
-    renderOrganizer();
-    await loaded();
+    renderOrganizer('triage');
+    await screen.findByText(/left in inbox/);
     await userEvent.keyboard('j');
 
     await userEvent.keyboard('{Enter}');
@@ -396,8 +420,8 @@ describe('Organizer keyboard shortcuts', () => {
     mocked.getTrackSuggestions.mockResolvedValue([
       { playlistId: 11, playlistName: 'Gym', score: 90, reason: 'tags' },
     ]);
-    renderOrganizer();
-    await loaded();
+    renderOrganizer('triage');
+    await screen.findByText(/left in inbox/);
     await screen.findByText(/90 · tags/);
 
     await userEvent.keyboard('1');
@@ -407,8 +431,8 @@ describe('Organizer keyboard shortcuts', () => {
 
   it('"o" opens the current track in Spotify', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
-    renderOrganizer();
-    await loaded();
+    renderOrganizer('triage');
+    await screen.findByText(/left in inbox/);
     await waitFor(() => expect(mocked.getTrackSuggestions).toHaveBeenCalled());
 
     await userEvent.keyboard('o');
@@ -417,23 +441,131 @@ describe('Organizer keyboard shortcuts', () => {
   });
 
   it('space plays the current track', async () => {
-    renderOrganizer();
-    await loaded();
+    renderOrganizer('triage');
+    await screen.findByText(/left in inbox/);
     await waitFor(() => expect(mocked.getTrackSuggestions).toHaveBeenCalled());
 
     await userEvent.keyboard(' ');
     await waitFor(() => expect(mocked.playTrack).toHaveBeenCalledWith('spotify:track:1'));
   });
 
-  it('clicking a table row focuses that track in triage', async () => {
+  it('triage hotkeys do nothing in Organize', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.keyboard('j');
+    await userEvent.keyboard('s');
+    await userEvent.keyboard(' ');
+    expect(mocked.setTrackStatus).not.toHaveBeenCalled();
+    expect(mocked.playTrack).not.toHaveBeenCalled();
+  });
+
+  it('"a" accepts every suggestion at or above 60 in triage', async () => {
+    mocked.getTrackSuggestions.mockResolvedValue([
+      { playlistId: 10, playlistName: 'Chill', score: 80, reason: 'tags' },
+      { playlistId: 11, playlistName: 'Gym', score: 40, reason: 'energy' },
+    ]);
+    renderOrganizer('triage');
+    await screen.findByText(/80 · tags/);
+
+    await userEvent.keyboard('a');
+
+    await waitFor(() => expect(mocked.assignTrack).toHaveBeenCalledWith('spotify:track:1', 10));
+    expect(mocked.assignTrack).not.toHaveBeenCalledWith('spotify:track:1', 11);
+  });
+});
+
+describe('Organizer views: inspector and hand-off', () => {
+  it('clicking a row focuses it in the inspector', async () => {
+    renderOrganizer();
+    await loaded();
+    expect(screen.queryByRole('button', { name: 'Open in Triage' })).toBeNull();
+
+    await userEvent.click(within(tableRow('Track 3')).getByTitle('Inspect song'));
+
+    await screen.findByRole('button', { name: 'Open in Triage' });
+    expect(mocked.getTrackSuggestions).toHaveBeenCalledWith('spotify:track:3');
+  });
+
+  it('Open in Triage starts triage on the focused song', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.click(within(tableRow('Track 3')).getByTitle('Inspect song'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Open in Triage' }));
+
+    expect(screen.getByRole('heading', { name: 'Track 3' })).toBeTruthy();
+  });
+
+  it('"Triage the next song" starts on the first inbox song even if another was focused', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.click(within(tableRow('Track 3')).getByTitle('Inspect song'));
+
+    await userEvent.click(screen.getByRole('button', { name: /Triage the next song/ }));
+
+    expect(screen.getByRole('heading', { name: 'Track 1' })).toBeTruthy();
+  });
+
+  it('"t" toggles between Organize and Triage', async () => {
     renderOrganizer();
     await loaded();
 
-    await userEvent.click(within(tableRow('Track 3')).getByTitle('View in Triage'));
+    await userEvent.keyboard('t');
+    expect(screen.getByRole('heading', { name: 'Track 1' })).toBeTruthy();
+    expect(screen.queryByPlaceholderText(/Search name or artist/)).toBeNull();
 
+    await userEvent.keyboard('t');
+    await loaded();
+    expect(screen.queryByPlaceholderText(/Search name or artist/)).not.toBeNull();
+  });
+
+  it('"t" is ignored while typing in an input', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.type(screen.getByPlaceholderText(/Search name or artist/), 't');
+    expect(screen.queryByPlaceholderText(/Search name or artist/)).not.toBeNull();
+  });
+
+  it('leaving Triage returns to Organize with the triaged song focused', async () => {
+    renderOrganizer('triage');
+    await screen.findByText(/2 left in inbox/);
+    await userEvent.keyboard('j'); // now on Track 2
+
+    await userEvent.keyboard('t');
+
+    await loaded();
+    // the inspector is showing a song, and it is Track 2
+    await screen.findByRole('button', { name: 'Open in Triage' });
+    expect(mocked.getTrackSuggestions).toHaveBeenLastCalledWith('spotify:track:2');
+  });
+
+  it('shows the floating bulk bar only while rows are selected', async () => {
+    renderOrganizer();
+    await loaded();
+    expect(screen.queryByRole('toolbar', { name: 'Bulk actions' })).toBeNull();
+
+    await userEvent.click(within(tableRow('Track 1')).getByRole('checkbox'));
+    expect(screen.queryByRole('toolbar', { name: 'Bulk actions' })).not.toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(screen.queryByRole('toolbar', { name: 'Bulk actions' })).toBeNull();
+  });
+
+  it('the triage history column lists session actions and Undo reverses the last one', async () => {
+    mocked.getTrackSuggestions.mockResolvedValue([
+      { playlistId: 10, playlistName: 'Chill', score: 80, reason: 'tags' },
+    ]);
+    renderOrganizer('triage');
+    await screen.findByText(/80 · tags/);
+
+    await userEvent.keyboard('s');
+    const history = screen.getByRole('complementary', { name: 'Session history' });
+    await within(history).findByText('Mark skipped');
+
+    await userEvent.click(within(history).getByRole('button', { name: /Undo/ }));
     await waitFor(() =>
-      expect(mocked.getTrackSuggestions).toHaveBeenLastCalledWith('spotify:track:3'),
+      expect(mocked.setTrackStatus).toHaveBeenLastCalledWith('spotify:track:1', 'inbox'),
     );
+    await waitFor(() => expect(within(history).queryByText('Mark skipped')).toBeNull());
   });
 });
 
@@ -499,10 +631,10 @@ describe('Organizer playlist management', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderOrganizer();
     await loaded();
-    await userEvent.click(screen.getByRole('button', { name: /^Chill/ }));
+    await userEvent.click(shelfButton(/^Chill/));
     await waitFor(() => expect(tableNames()).toEqual(['Track 3']));
 
-    const row = screen.getByRole('button', { name: /^Chill/ }).parentElement as HTMLElement;
+    const row = shelfButton(/^Chill/).parentElement as HTMLElement;
     await userEvent.click(within(row).getByTitle('Delete playlist'));
 
     await waitFor(() => expect(mocked.deletePlaylist).toHaveBeenCalledWith(10));
@@ -512,7 +644,7 @@ describe('Organizer playlist management', () => {
   it('opens the recipe editor for a playlist and closes it again', async () => {
     renderOrganizer();
     await loaded();
-    const row = screen.getByRole('button', { name: /^Chill/ }).parentElement as HTMLElement;
+    const row = shelfButton(/^Chill/).parentElement as HTMLElement;
 
     await userEvent.click(within(row).getByTitle('Edit recipe'));
     await screen.findByText('Recipe: Chill');
@@ -534,10 +666,10 @@ describe('Organizer auto-sort', () => {
     expect(tab.disabled).toBe(true);
 
     // Main is a library entry, not a sub-playlist: still disabled
-    await userEvent.click(screen.getByRole('button', { name: /^Main\s*2$/ }));
+    await userEvent.click(shelfButton(/^Main\s*2$/));
     expect(tab.disabled).toBe(true);
 
-    await userEvent.click(screen.getByRole('button', { name: /^Gym/ }));
+    await userEvent.click(shelfButton(/^Gym/));
     expect(tab.disabled).toBe(false);
 
     await userEvent.click(tab);
@@ -551,7 +683,7 @@ describe('Organizer auto-sort', () => {
     ]);
     renderOrganizer();
     await loaded();
-    await userEvent.click(screen.getByRole('button', { name: /^Gym/ }));
+    await userEvent.click(shelfButton(/^Gym/));
     await userEvent.click(screen.getByRole('button', { name: 'Auto-sort' }));
     await screen.findByText('Cand');
 
@@ -572,5 +704,234 @@ describe('Organizer cleanup', () => {
     removeOrganizer();
 
     await waitFor(() => expect(screen.queryByText(/Last action/)).toBeNull());
+  });
+});
+
+describe('Organizer triage flow robustness', () => {
+  /** Makes assign/unassign behave like the server: assigning moves a track out of the inbox. */
+  function statefulServer() {
+    const memberships = new Map<string, number[]>();
+    const view = (t: TrackView): TrackView => {
+      const ids = memberships.get(t.uri) ?? [];
+      return {
+        ...t,
+        status: ids.length ? 'organized' : t.status,
+        playlists: ids.map((id) => ({ id, name: id === 10 ? 'Chill' : 'Gym' })),
+      };
+    };
+    mocked.getTracks.mockImplementation(async (params = {}) => {
+      const items = ALL.map(view).filter((t) => !params.status || t.status === params.status);
+      return { total: items.length, items };
+    });
+    mocked.assignTrack.mockImplementation(async (uri, id) => {
+      memberships.set(uri, [...(memberships.get(uri) ?? []), id]);
+    });
+    mocked.unassignTrack.mockImplementation(async (uri, id) => {
+      memberships.set(
+        uri,
+        (memberships.get(uri) ?? []).filter((x) => x !== id),
+      );
+    });
+  }
+
+  const TWO = [
+    { playlistId: 10, playlistName: 'Chill', score: 90, reason: 'tags' },
+    { playlistId: 11, playlistName: 'Gym', score: 80, reason: 'energy' },
+  ];
+
+  const tile = (name: RegExp) => screen.getByRole('button', { name, pressed: undefined });
+
+  it('keeps the song on stage after the first assignment, so a second key lands on the same song', async () => {
+    statefulServer();
+    mocked.getTrackSuggestions.mockResolvedValue(TWO);
+    renderOrganizer('triage');
+    await screen.findByText(/90 · tags/);
+
+    await userEvent.keyboard('1');
+    await waitFor(() => expect(tile(/^Chill/).getAttribute('aria-pressed')).toBe('true'));
+    await userEvent.keyboard('2');
+
+    await waitFor(() => expect(mocked.assignTrack).toHaveBeenCalledTimes(2));
+    expect(mocked.assignTrack.mock.calls).toEqual([
+      ['spotify:track:1', 10],
+      ['spotify:track:1', 11],
+    ]);
+    expect(screen.getByRole('heading', { name: 'Track 1' })).toBeTruthy();
+  });
+
+  it('pressing the same number again takes the song out of that playlist', async () => {
+    statefulServer();
+    mocked.getTrackSuggestions.mockResolvedValue(TWO);
+    renderOrganizer('triage');
+    await screen.findByText(/90 · tags/);
+
+    await userEvent.keyboard('1');
+    await waitFor(() => expect(tile(/^Chill/).getAttribute('aria-pressed')).toBe('true'));
+    await userEvent.keyboard('1');
+
+    await waitFor(() => expect(mocked.unassignTrack).toHaveBeenCalledWith('spotify:track:1', 10));
+  });
+
+  it('records triage assignments in the session history, and undo clears the tile', async () => {
+    statefulServer();
+    mocked.getTrackSuggestions.mockResolvedValue(TWO);
+    renderOrganizer('triage');
+    await screen.findByText(/90 · tags/);
+
+    await userEvent.keyboard('1');
+    const history = screen.getByRole('complementary', { name: 'Session history' });
+    await within(history).findByText('Assign to Chill');
+
+    await userEvent.keyboard('u');
+    await waitFor(() => expect(mocked.unassignTrack).toHaveBeenCalledWith('spotify:track:1', 10));
+    await waitFor(() => expect(tile(/^Chill/).getAttribute('aria-pressed')).toBe('false'));
+  });
+
+  it('Enter on a focused button activates that button instead of the Done hotkey', async () => {
+    renderOrganizer('triage');
+    await screen.findByText(/left in inbox/);
+    await userEvent.keyboard('j'); // now on Track 2
+    await waitFor(() =>
+      expect(mocked.getTrackSuggestions).toHaveBeenLastCalledWith('spotify:track:2'),
+    );
+    const play = screen.getByRole('button', { name: /Play/ });
+    play.focus();
+
+    await userEvent.keyboard('{Enter}');
+
+    await waitFor(() => expect(mocked.playTrack).toHaveBeenCalledWith('spotify:track:2'));
+    // Done would have reset to Track 1
+    expect(screen.getByRole('heading', { name: 'Track 2' })).toBeTruthy();
+  });
+
+  it('ignores global hotkeys while the recipe editor is open', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.click(
+      within(shelfButton(/^Chill/).parentElement as HTMLElement).getByTitle('Edit recipe'),
+    );
+    await screen.findByText('Recipe: Chill');
+
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.keyboard('t');
+
+    expect(screen.queryByPlaceholderText(/Search name or artist/)).not.toBeNull();
+  });
+
+  it('falls back to the inspector when the playlist behind Auto-sort is deselected', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.click(shelfButton(/^Gym/));
+    await userEvent.click(screen.getByRole('button', { name: 'Auto-sort' }));
+    await screen.findByText('Auto-sort: Gym');
+
+    await userEvent.click(shelfButton(/^Gym/)); // deselect
+
+    expect(screen.queryByText('Auto-sort: Gym')).toBeNull();
+    expect(screen.queryByText(/Select a song/)).not.toBeNull();
+    expect((screen.getByRole('button', { name: 'Auto-sort' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+});
+
+describe('Organizer: remaining paths', () => {
+  it('shows a toast when each kind of change fails', async () => {
+    mocked.unassignTrack.mockRejectedValue(new ApiError(500, 'unassign failed'));
+    mocked.bulkAssign.mockRejectedValue(new ApiError(500, 'bulk assign failed'));
+    mocked.bulkUnassign.mockRejectedValue(new ApiError(500, 'bulk unassign failed'));
+    mocked.setTrackStatus.mockRejectedValue(new ApiError(500, 'status failed'));
+    mocked.createPlaylist.mockRejectedValue(new ApiError(500, 'create failed'));
+    mocked.deletePlaylist.mockRejectedValue(new ApiError(500, 'delete failed'));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderOrganizer();
+    await loaded();
+
+    await userEvent.click(within(tableRow('Track 3')).getByTitle('Click to unassign'));
+    await screen.findByText('unassign failed');
+
+    await userEvent.click(within(tableRow('Track 1')).getByTitle(/Reset: unassign/));
+    await screen.findByText('status failed');
+
+    await userEvent.type(screen.getByPlaceholderText('New playlist…'), 'X{Enter}');
+    await screen.findByText('create failed');
+
+    await userEvent.click(
+      within(shelfButton(/^Gym/).parentElement as HTMLElement).getByTitle('Delete playlist'),
+    );
+    await screen.findByText('delete failed');
+
+    await userEvent.click(within(tableRow('Track 1')).getByRole('checkbox'));
+    await userEvent.selectOptions(screen.getByLabelText('Target playlist'), 'Gym');
+    await userEvent.click(screen.getByRole('button', { name: 'Assign' }));
+    await screen.findByText('bulk assign failed');
+
+    await userEvent.selectOptions(screen.getByLabelText('Target playlist'), 'Gym');
+    await userEvent.click(screen.getByRole('button', { name: 'Unassign' }));
+    await screen.findByText('bulk unassign failed');
+  });
+
+  it('bulk unassign removes the selection from the playlist and undo puts it back', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.click(within(tableRow('Track 1')).getByRole('checkbox'));
+    await userEvent.click(within(tableRow('Track 2')).getByRole('checkbox'));
+
+    await userEvent.selectOptions(screen.getByLabelText('Target playlist'), 'Chill');
+    await userEvent.click(screen.getByRole('button', { name: 'Unassign' }));
+
+    await waitFor(() =>
+      expect(mocked.bulkUnassign).toHaveBeenCalledWith(['spotify:track:1', 'spotify:track:2'], 10),
+    );
+    await screen.findByText(/Last action: Unassign 2 from Chill/);
+    await waitFor(() => expect(screen.queryByText(/selected/)).toBeNull());
+
+    await userEvent.keyboard('u');
+    await waitFor(() =>
+      expect(mocked.bulkAssign).toHaveBeenCalledWith(['spotify:track:1', 'spotify:track:2'], 10),
+    );
+  });
+
+  it('a row can be selected and deselected, and the header checkbox selects every row', async () => {
+    renderOrganizer();
+    await loaded();
+    const box = within(tableRow('Track 1')).getByRole('checkbox');
+
+    await userEvent.click(box);
+    expect(screen.queryByText('1 selected')).not.toBeNull();
+    await userEvent.click(box);
+    expect(screen.queryByText(/selected/)).toBeNull();
+
+    await userEvent.click(screen.getByTitle('Select all'));
+    expect(screen.queryByText('3 selected')).not.toBeNull();
+    await userEvent.click(screen.getByTitle('Select all'));
+    expect(screen.queryByText(/selected/)).toBeNull();
+  });
+
+  it('switches between the Inspector and Auto-sort tabs', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.click(shelfButton(/^Gym/));
+    await userEvent.click(screen.getByRole('button', { name: 'Auto-sort' }));
+    await screen.findByText('Auto-sort: Gym');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Inspector' }));
+
+    expect(screen.queryByText('Auto-sort: Gym')).toBeNull();
+    expect(screen.queryByText(/Select a song/)).not.toBeNull();
+  });
+
+  it('handles key presses dispatched on the window itself (not an element)', async () => {
+    renderOrganizer();
+    await loaded();
+    fireEvent.keyDown(window, { key: 't' });
+    expect(screen.queryByPlaceholderText(/Search name or artist/)).toBeNull();
+  });
+
+  it('ignores shortcuts combined with Ctrl, Meta or Alt', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.keyboard('{Control>}t{/Control}');
+    expect(screen.queryByPlaceholderText(/Search name or artist/)).not.toBeNull();
   });
 });

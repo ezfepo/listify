@@ -58,6 +58,16 @@ describe('getTrackForReview', () => {
     ]);
   });
 
+  it('exposes duration and added-at', () => {
+    upsertTrack(
+      { ...track('spotify:track:3', 'Timed'), durationMs: 215000, addedAt: '2026-01-02T03:04:05Z' },
+      'inbox',
+    );
+    const view = getTrackForReview('spotify:track:3');
+    expect(view?.durationMs).toBe(215000);
+    expect(view?.addedAt).toBe('2026-01-02T03:04:05Z');
+  });
+
   it('returns null features and empty arrays for a track with no enrichment yet', () => {
     upsertTrack(track('spotify:track:2', 'Unenriched'), 'inbox');
     const view = getTrackForReview('spotify:track:2');

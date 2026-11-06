@@ -57,7 +57,7 @@ function TagChips({
           }
         }}
         placeholder="add tag…"
-        className="w-24 rounded bg-zinc-900 px-2 py-0.5 text-xs"
+        className="w-24 rounded border border-line bg-surface px-2 py-0.5 text-xs"
       />
     </div>
   );
@@ -118,27 +118,27 @@ export function RecipeEditor({ playlistId, playlistName, onClose }: RecipeEditor
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[85vh] w-[40rem] max-w-[95vw] overflow-y-auto rounded-lg bg-zinc-900 p-5 text-sm shadow-xl"
+        className="max-h-[85vh] w-[40rem] max-w-[95vw] overflow-y-auto rounded-lg bg-surface p-5 text-sm shadow-xl"
       >
         <h2 className="mb-3 text-lg font-semibold">Recipe: {playlistName}</h2>
 
-        <label className="mb-1 block text-xs text-zinc-400">Include tags (any match counts)</label>
+        <label className="mb-1 block text-xs text-muted">Include tags (any match counts)</label>
         <TagChips
           tags={includeTags}
           onChange={setIncludeTags}
-          colorClass="bg-green-900 text-green-200"
+          colorClass="bg-done-soft text-done"
         />
 
-        <label className="mb-1 mt-3 block text-xs text-zinc-400">
+        <label className="mb-1 mt-3 block text-xs text-muted">
           Exclude tags (any match scores 0)
         </label>
         <TagChips
           tags={excludeTags}
           onChange={setExcludeTags}
-          colorClass="bg-red-900 text-red-200"
+          colorClass="bg-danger/10 text-danger"
         />
 
-        <label className="mb-2 mt-4 block text-xs text-zinc-400">Feature ranges</label>
+        <label className="mb-2 mt-4 block text-xs text-muted">Feature ranges</label>
         <div className="space-y-3">
           {FEATURE_KEYS.map((key) => {
             const enabled = featureRanges[key] !== undefined;
@@ -156,14 +156,14 @@ export function RecipeEditor({ playlistId, playlistName, onClose }: RecipeEditor
                     <span>{key}</span>
                   </label>
                   {enabled && (
-                    <span className="text-xs text-zinc-400">
+                    <span className="text-xs text-muted">
                       {min.toFixed(2)} – {max.toFixed(2)}
                     </span>
                   )}
                 </div>
                 {enabled && (
                   <div className="flex items-center gap-2 pl-5">
-                    <span className="w-8 shrink-0 text-right text-xs text-zinc-500">min</span>
+                    <span className="w-8 shrink-0 text-right text-xs text-muted">min</span>
                     <input
                       type="range"
                       min={lo}
@@ -173,7 +173,7 @@ export function RecipeEditor({ playlistId, playlistName, onClose }: RecipeEditor
                       onChange={(e) => setRange(key, 0, Number(e.target.value))}
                       className="flex-1"
                     />
-                    <span className="w-8 shrink-0 text-xs text-zinc-500">max</span>
+                    <span className="w-8 shrink-0 text-xs text-muted">max</span>
                     <input
                       type="range"
                       min={lo}
@@ -191,19 +191,19 @@ export function RecipeEditor({ playlistId, playlistName, onClose }: RecipeEditor
         </div>
 
         {save.isError && (
-          <p className="mt-2 text-xs text-red-400">
+          <p className="mt-2 text-xs text-danger">
             Could not save — check the ranges and try again.
           </p>
         )}
 
         <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded bg-zinc-700 px-3 py-1">
+          <button onClick={onClose} className="rounded bg-raise px-3 py-1">
             Cancel
           </button>
           <button
             onClick={() => save.mutate()}
             disabled={save.isPending}
-            className="rounded bg-green-600 px-3 py-1 disabled:opacity-40"
+            className="rounded bg-accent text-white px-3 py-1 disabled:opacity-40"
           >
             Save
           </button>

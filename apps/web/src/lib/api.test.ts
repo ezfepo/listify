@@ -171,3 +171,56 @@ describe('api endpoints', () => {
     expect(call(0).body).toEqual(snapshot);
   });
 });
+
+describe('formatDuration', () => {
+  it('formats milliseconds as m:ss', async () => {
+    const { formatDuration } = await import('./api');
+    expect(formatDuration(215000)).toBe('3:35');
+    expect(formatDuration(60000)).toBe('1:00');
+    expect(formatDuration(5400)).toBe('0:05');
+  });
+
+  it('shows a dash when unknown', async () => {
+    const { formatDuration } = await import('./api');
+    expect(formatDuration(null)).toBe('—');
+    expect(formatDuration(undefined)).toBe('—');
+  });
+});
+
+describe('remaining endpoints', () => {
+  beforeEach(() => {
+    fetchMock.mockResolvedValue(jsonResponse({}));
+  });
+
+  it('updatePlaylist PATCHes the changed fields only', async () => {
+    await api.updatePlaylist(7, { name: 'New', emoji: null });
+    expect(call(0)).toMatchObject({
+      url: '/api/playlists/7',
+      method: 'PATCH',
+      body: { name: 'New', emoji: null },
+    });
+  });
+
+  it('unassignTrack POSTs the playlist id to the encoded URI', async () => {
+    await api.unassignTrack('spotify:track:1', 3);
+    expect(call(0)).toMatchObject({
+      url: '/api/tracks/spotify%3Atrack%3A1/unassign',
+      method: 'POST',
+      body: { playlistId: 3 },
+    });
+  });
+
+  it('getTrackSuggestions GETs the encoded URI', async () => {
+    await api.getTrackSuggestions('spotify:track:1');
+    expect(call(0).url).toBe('/api/tracks/spotify%3Atrack%3A1/suggestions');
+  });
+
+  it('playTrack POSTs with no body', async () => {
+    await api.playTrack('spotify:track:1');
+    expect(call(0)).toMatchObject({
+      url: '/api/tracks/spotify%3Atrack%3A1/play',
+      method: 'POST',
+      body: undefined,
+    });
+  });
+});

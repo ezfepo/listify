@@ -1,24 +1,32 @@
-import { render, screen, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createRef, type ComponentProps } from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import type { PlaylistView, TrackView } from '../lib/api';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { api, type PlaylistView, type TrackView } from '../lib/api';
 import { CenterTable } from './CenterTable';
 
 // jsdom has no layout, so the real virtualizer would render zero rows. Render them all
-// instead: this file tests CenterTable's own sorting/selection/bulk logic, not the library.
+// instead: this file tests CenterTable's own sorting/selection logic, not the library.
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
-    getTotalSize: () => count * 44,
+    getTotalSize: () => count * 48,
     getVirtualItems: () =>
       Array.from({ length: count }, (_, index) => ({
         index,
         key: index,
-        start: index * 44,
-        size: 44,
+        start: index * 48,
+        size: 48,
       })),
   }),
 }));
+
+vi.mock('../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/api')>()),
+  api: { getTrackSuggestions: vi.fn() },
+}));
+
+const getTrackSuggestions = vi.mocked(api.getTrackSuggestions);
 
 function track(n: number, overrides: Partial<TrackView> = {}): TrackView {
   return {
@@ -27,6 +35,8 @@ function track(n: number, overrides: Partial<TrackView> = {}): TrackView {
     artists: `Artist ${n}`,
     album: null,
     imageUrl: null,
+    durationMs: null,
+    addedAt: null,
     isrc: null,
     status: 'inbox',
     inMain: true,
@@ -53,24 +63,31 @@ function playlist(id: number, kind: PlaylistView['kind'], name: string): Playlis
   };
 }
 
+function wrap(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+}
+
 function setup(overrides: Partial<ComponentProps<typeof CenterTable>> = {}) {
   const mocks = {
+    onStatusFilterChange: vi.fn(),
     onToggleSelect: vi.fn(),
     onClearSelection: vi.fn(),
     onSelectAll: vi.fn(),
     onSearchChange: vi.fn(),
     onAssign: vi.fn(),
     onUnassign: vi.fn(),
-    onBulkAssign: vi.fn(),
-    onBulkUnassign: vi.fn(),
     onSetStatus: vi.fn(),
     onPlay: vi.fn(),
     onFocusTrack: vi.fn(),
   };
   const props: ComponentProps<typeof CenterTable> = {
     tracks: [track(1), track(2), track(3)],
+    statusCounts: { inbox: 12, organized: 34, skipped: 5 },
+    statusFilter: null,
     selection: new Set<string>(),
     search: '',
+    focusedUri: null,
     playlists: [
       playlist(1, 'main', 'Main'),
       playlist(2, 'sub', 'Chill'),
@@ -79,19 +96,23 @@ function setup(overrides: Partial<ComponentProps<typeof CenterTable>> = {}) {
     ...mocks,
     ...overrides,
   };
-  const view = render(<CenterTable {...props} />);
+  const view = render(wrap(<CenterTable {...props} />));
   return { props, mocks, ...view };
 }
 
 function rowNames(): string[] {
-  return screen
-    .getAllByTitle('View in Triage')
-    .map((b) => b.querySelector('div')?.textContent ?? '');
+  return screen.getAllByTitle('Inspect song').map((b) => b.querySelector('div')?.textContent ?? '');
 }
 
 function rowFor(name: string): HTMLElement {
   return screen.getByText(name).closest('[style*="position: absolute"]') as HTMLElement;
 }
+
+beforeEach(() => {
+  window.localStorage.clear();
+  getTrackSuggestions.mockReset();
+  getTrackSuggestions.mockResolvedValue([]);
+});
 
 describe('CenterTable rows', () => {
   it('renders one row per track with title and artist', () => {
@@ -100,17 +121,21 @@ describe('CenterTable rows', () => {
     expect(screen.queryByText('Artist 2')).not.toBeNull();
   });
 
-  it('shows features with two decimals and a dash for missing values', () => {
-    setup({ tracks: [track(1, { features: { energy: 0.5, valence: 0.123 } })] });
+  it('shows album, energy (two decimals) and rounded BPM, with dashes when missing', () => {
+    setup({
+      tracks: [track(1, { album: 'Album One', features: { energy: 0.5, tempo: 120.4 } }), track(2)],
+    });
     const row = rowFor('Track 1');
+    expect(within(row).queryByText('Album One')).not.toBeNull();
     expect(within(row).queryByText('0.50')).not.toBeNull();
-    expect(within(row).queryByText('0.12')).not.toBeNull();
-    expect(within(row).getAllByText('—')).toHaveLength(6);
+    expect(within(row).queryByText('120')).not.toBeNull();
+    // album, suggested, energy and bpm are all empty for the bare track
+    expect(within(rowFor('Track 2')).getAllByText('—').length).toBeGreaterThanOrEqual(3);
   });
 
-  it('shows a dash for every feature when a track has no features at all', () => {
-    setup({ tracks: [track(1)] });
-    expect(within(rowFor('Track 1')).getAllByText('—')).toHaveLength(8);
+  it('shows the track length as m:ss', () => {
+    setup({ tracks: [track(1, { durationMs: 215000 })] });
+    expect(within(rowFor('Track 1')).queryByText('3:35')).not.toBeNull();
   });
 
   it('shows the playlists a track belongs to, and clicking one unassigns it', async () => {
@@ -121,13 +146,13 @@ describe('CenterTable rows', () => {
     expect(mocks.onUnassign).toHaveBeenCalledWith('spotify:track:1', 2);
   });
 
-  it('links to Spotify, plays, and focuses the track in triage', async () => {
+  it('links to Spotify, plays, and focuses the track for inspection', async () => {
     const { mocks } = setup({ tracks: [track(1)] });
     const row = rowFor('Track 1');
 
     expect(within(row).getByTitle('Open in Spotify').getAttribute('href')).toBe('spotify:track:1');
     await userEvent.click(within(row).getByTitle('Play on active device'));
-    await userEvent.click(within(row).getByTitle('View in Triage'));
+    await userEvent.click(within(row).getByTitle('Inspect song'));
 
     expect(mocks.onPlay).toHaveBeenCalledWith('spotify:track:1');
     expect(mocks.onFocusTrack).toHaveBeenCalledWith('spotify:track:1');
@@ -146,6 +171,70 @@ describe('CenterTable rows', () => {
     expect(mocks.onAssign).toHaveBeenCalledWith('spotify:track:1', 3);
     expect(select.value).toBe(''); // resets so the same playlist can be picked again
   });
+
+  it('the per-row reset button sends that track back to inbox without needing a selection', async () => {
+    const { mocks } = setup();
+    const resetButtons = screen.getAllByTitle(
+      'Reset: unassign from everything and send back to Inbox',
+    );
+    await userEvent.click(resetButtons[0]!);
+    expect(mocks.onSetStatus).toHaveBeenCalledWith('spotify:track:1', 'inbox');
+  });
+
+  it('highlights the focused row', () => {
+    setup({ focusedUri: 'spotify:track:2' });
+    expect(rowFor('Track 2').className).toContain('bg-raise');
+    expect(rowFor('Track 1').className).not.toContain('bg-raise');
+  });
+});
+
+describe('CenterTable suggested column', () => {
+  it('shows the best suggestion the track is not already in', async () => {
+    getTrackSuggestions.mockResolvedValue([
+      { playlistId: 2, playlistName: 'Chill', score: 90, reason: 'tags' },
+      { playlistId: 3, playlistName: 'Gym', score: 70, reason: 'energy' },
+    ]);
+    setup({ tracks: [track(1, { playlists: [{ id: 2, name: 'Chill' }] })] });
+    await waitFor(() => expect(within(rowFor('Track 1')).queryByText('Gym 70')).not.toBeNull());
+    expect(within(rowFor('Track 1')).queryByText('Chill 90')).toBeNull();
+  });
+
+  it('shows a dash when nothing scores above zero', async () => {
+    getTrackSuggestions.mockResolvedValue([
+      { playlistId: 2, playlistName: 'Chill', score: 0, reason: '' },
+    ]);
+    setup({ tracks: [track(1)] });
+    await waitFor(() => expect(getTrackSuggestions).toHaveBeenCalled());
+    expect(within(rowFor('Track 1')).queryByText(/^Chill \d/)).toBeNull();
+  });
+});
+
+describe('CenterTable status control', () => {
+  it('shows each status with its count', () => {
+    setup();
+    expect(screen.getByRole('button', { name: /Inbox/ }).textContent).toContain('12');
+    expect(screen.getByRole('button', { name: /Organized/ }).textContent).toContain('34');
+    expect(screen.getByRole('button', { name: /Skipped/ }).textContent).toContain('5');
+  });
+
+  it('picking a status filters by it, and All clears the filter', async () => {
+    const { mocks } = setup();
+    await userEvent.click(screen.getByRole('button', { name: /Organized/ }));
+    expect(mocks.onStatusFilterChange).toHaveBeenLastCalledWith('organized');
+    await userEvent.click(screen.getByRole('button', { name: /^All/ }));
+    expect(mocks.onStatusFilterChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it('marks only the active status as pressed (All when there is no filter)', () => {
+    setup({ statusFilter: 'skipped' });
+    expect(screen.getByRole('button', { name: /Skipped/ }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('button', { name: /Inbox/ }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    expect(screen.getByRole('button', { name: /^All/ }).getAttribute('aria-pressed')).toBe('false');
+  });
 });
 
 describe('CenterTable sorting', () => {
@@ -156,45 +245,39 @@ describe('CenterTable sorting', () => {
     track(4, { name: 'Delta', features: { energy: 0.5 } }),
   ];
 
-  it('cycles name sort: descending, ascending, then back to original order', async () => {
+  it('keeps the original order by default', () => {
     setup({ tracks });
-    const header = screen.getByRole('button', { name: /Title \/ Artist/ });
-
-    await userEvent.click(header);
-    expect(rowNames()).toEqual(['Delta', 'Charlie', 'Bravo', 'Alpha']);
-    expect(header.textContent).toContain('▾');
-
-    await userEvent.click(header);
-    expect(rowNames()).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta']);
-    expect(header.textContent).toContain('▴');
-
-    await userEvent.click(header);
     expect(rowNames()).toEqual(['Bravo', 'Alpha', 'Charlie', 'Delta']);
-    expect(header.textContent).not.toMatch(/[▾▴]/);
   });
 
-  it('sorts by a feature, always putting tracks without that feature last', async () => {
+  it('sorts by title ascending, and the direction button flips it', async () => {
     setup({ tracks });
-    const energy = screen.getByTitle('energy');
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), 'Title');
+    expect(rowNames()).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta']);
 
-    await userEvent.click(energy); // descending
+    await userEvent.click(screen.getByRole('button', { name: /Sort direction/ }));
+    expect(rowNames()).toEqual(['Delta', 'Charlie', 'Bravo', 'Alpha']);
+  });
+
+  it('sorts by a feature descending, always putting tracks without that feature last', async () => {
+    setup({ tracks });
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), 'Energy');
     expect(rowNames()).toEqual(['Alpha', 'Delta', 'Bravo', 'Charlie']);
 
-    await userEvent.click(energy); // ascending
+    await userEvent.click(screen.getByRole('button', { name: /Sort direction/ }));
     expect(rowNames()).toEqual(['Bravo', 'Delta', 'Alpha', 'Charlie']);
   });
 
-  it('switching to another column starts again at descending', async () => {
+  it('going back to Default order restores the original order', async () => {
     setup({ tracks });
-    await userEvent.click(screen.getByTitle('energy'));
-    await userEvent.click(screen.getByTitle('energy')); // now ascending
-    await userEvent.click(screen.getByRole('button', { name: /Title \/ Artist/ }));
-    expect(rowNames()).toEqual(['Delta', 'Charlie', 'Bravo', 'Alpha']);
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), 'Title');
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), '');
+    expect(rowNames()).toEqual(['Bravo', 'Alpha', 'Charlie', 'Delta']);
   });
 
   it('does not mutate the tracks prop when sorting', async () => {
     const { props } = setup({ tracks });
-    await userEvent.click(screen.getByRole('button', { name: /Title \/ Artist/ }));
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), 'Title');
     expect(props.tracks.map((t) => t.name)).toEqual(['Bravo', 'Alpha', 'Charlie', 'Delta']);
   });
 });
@@ -202,48 +285,51 @@ describe('CenterTable sorting', () => {
 describe('CenterTable search', () => {
   it('reports typed text, and forwards its ref to the input', async () => {
     const ref = createRef<HTMLInputElement>();
-    const mocks = { onSearchChange: vi.fn() };
+    const onSearchChange = vi.fn();
     render(
-      <CenterTable
-        ref={ref}
-        tracks={[]}
-        selection={new Set()}
-        onToggleSelect={vi.fn()}
-        onClearSelection={vi.fn()}
-        onSelectAll={vi.fn()}
-        search=""
-        onSearchChange={mocks.onSearchChange}
-        playlists={[]}
-        onAssign={vi.fn()}
-        onUnassign={vi.fn()}
-        onBulkAssign={vi.fn()}
-        onBulkUnassign={vi.fn()}
-        onSetStatus={vi.fn()}
-        onPlay={vi.fn()}
-        onFocusTrack={vi.fn()}
-      />,
+      wrap(
+        <CenterTable
+          ref={ref}
+          tracks={[]}
+          statusCounts={{ inbox: 0, organized: 0, skipped: 0 }}
+          statusFilter={null}
+          onStatusFilterChange={vi.fn()}
+          selection={new Set()}
+          onToggleSelect={vi.fn()}
+          onClearSelection={vi.fn()}
+          onSelectAll={vi.fn()}
+          search=""
+          onSearchChange={onSearchChange}
+          playlists={[]}
+          focusedUri={null}
+          onAssign={vi.fn()}
+          onUnassign={vi.fn()}
+          onSetStatus={vi.fn()}
+          onPlay={vi.fn()}
+          onFocusTrack={vi.fn()}
+        />,
+      ),
     );
 
     await userEvent.type(screen.getByPlaceholderText(/Search name or artist/), 'a');
-    expect(mocks.onSearchChange).toHaveBeenCalledWith('a');
+    expect(onSearchChange).toHaveBeenCalledWith('a');
     expect(ref.current).toBe(screen.getByPlaceholderText(/Search name or artist/));
   });
 });
 
-describe('CenterTable selection and bulk actions', () => {
+describe('CenterTable selection', () => {
   it('toggles selection through the row checkbox and reflects selected state', async () => {
     const { mocks } = setup({ selection: new Set(['spotify:track:2']) });
 
-    // boxes[0] is the "select all" header checkbox; row checkboxes follow.
-    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
-    expect(boxes.slice(1).map((b) => b.checked)).toEqual([false, true, false]);
+    const boxes = screen.getAllByRole('checkbox', { name: /^Select Track/ }) as HTMLInputElement[];
+    expect(boxes.map((b) => b.checked)).toEqual([false, true, false]);
 
-    await userEvent.click(boxes[1]!);
+    await userEvent.click(boxes[0]!);
     expect(mocks.onToggleSelect).toHaveBeenCalledWith('spotify:track:1');
   });
 
-  it('select-all checks every row and selects every visible track', async () => {
-    const { mocks } = setup({ selection: new Set() });
+  it('select-all selects every visible track', async () => {
+    const { mocks } = setup();
     const selectAll = screen.getByTitle('Select all') as HTMLInputElement;
     expect(selectAll.checked).toBe(false);
 
@@ -256,7 +342,7 @@ describe('CenterTable selection and bulk actions', () => {
     ]);
   });
 
-  it('select-all shows checked when every visible track is already selected, and clears on uncheck', async () => {
+  it('select-all shows checked when every visible track is selected, and clears on uncheck', async () => {
     const { mocks } = setup({
       selection: new Set(['spotify:track:1', 'spotify:track:2', 'spotify:track:3']),
     });
@@ -270,86 +356,114 @@ describe('CenterTable selection and bulk actions', () => {
 
   it('select-all shows indeterminate when only some visible tracks are selected', () => {
     setup({ selection: new Set(['spotify:track:2']) });
-    const selectAll = screen.getByTitle('Select all') as HTMLInputElement;
-    expect(selectAll.indeterminate).toBe(true);
-  });
-
-  it('hides the bulk bar until something is selected', () => {
-    setup();
-    expect(screen.queryByText(/selected/)).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
-  });
-
-  it('shows the selection count and keeps Assign/Unassign disabled until a playlist is picked', () => {
-    setup({ selection: new Set(['spotify:track:1', 'spotify:track:2']) });
-    expect(screen.queryByText('2 selected')).not.toBeNull();
-    expect((screen.getByRole('button', { name: 'Assign' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-    expect((screen.getByRole('button', { name: 'Unassign' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-  });
-
-  it('bulk-assigns the selected URIs to the chosen playlist, then resets the picker', async () => {
-    const { mocks } = setup({ selection: new Set(['spotify:track:1', 'spotify:track:3']) });
-    const picker = screen.getByDisplayValue('Playlist…') as HTMLSelectElement;
-
-    await userEvent.selectOptions(picker, 'Chill');
-    await userEvent.click(screen.getByRole('button', { name: 'Assign' }));
-
-    expect(mocks.onBulkAssign).toHaveBeenCalledWith(['spotify:track:1', 'spotify:track:3'], 2);
-    expect(picker.value).toBe('');
-  });
-
-  it('bulk-unassigns from the chosen playlist', async () => {
-    const { mocks } = setup({ selection: new Set(['spotify:track:2']) });
-
-    await userEvent.selectOptions(screen.getByDisplayValue('Playlist…'), 'Gym');
-    await userEvent.click(screen.getByRole('button', { name: 'Unassign' }));
-
-    expect(mocks.onBulkUnassign).toHaveBeenCalledWith(['spotify:track:2'], 3);
-  });
-
-  it('bulk Skip marks every selected track skipped and clears the selection', async () => {
-    const { mocks } = setup({ selection: new Set(['spotify:track:1', 'spotify:track:2']) });
-
-    await userEvent.click(screen.getByRole('button', { name: 'Skip' }));
-
-    expect(mocks.onSetStatus.mock.calls).toEqual([
-      ['spotify:track:1', 'skipped'],
-      ['spotify:track:2', 'skipped'],
-    ]);
-    expect(mocks.onClearSelection).toHaveBeenCalledTimes(1);
-  });
-
-  it('bulk Reset sends every selected track back to inbox and clears the selection', async () => {
-    const { mocks } = setup({ selection: new Set(['spotify:track:1', 'spotify:track:2']) });
-
-    await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
-
-    expect(mocks.onSetStatus.mock.calls).toEqual([
-      ['spotify:track:1', 'inbox'],
-      ['spotify:track:2', 'inbox'],
-    ]);
-    expect(mocks.onClearSelection).toHaveBeenCalledTimes(1);
-  });
-
-  it('Clear clears the selection without changing anything', async () => {
-    const { mocks } = setup({ selection: new Set(['spotify:track:1']) });
-    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    expect(mocks.onClearSelection).toHaveBeenCalledTimes(1);
-    expect(mocks.onSetStatus).not.toHaveBeenCalled();
+    expect((screen.getByTitle('Select all') as HTMLInputElement).indeterminate).toBe(true);
   });
 });
 
-describe('CenterTable row actions', () => {
-  it('the per-row reset button sends that track back to inbox without needing a selection', async () => {
-    const { mocks } = setup();
-    const resetButtons = screen.getAllByTitle(
-      'Reset: unassign from everything and send back to Inbox',
-    );
-    await userEvent.click(resetButtons[0]!);
-    expect(mocks.onSetStatus).toHaveBeenCalledWith('spotify:track:1', 'inbox');
+describe('CenterTable columns', () => {
+  const rich = track(1, {
+    album: 'Alb',
+    durationMs: 200000,
+    addedAt: '2026-03-04T10:00:00Z',
+    status: 'organized',
+    features: { valence: 0.11, danceability: 0.22, loudness: -7.46 },
+    tags: [
+      { tag: 'pop', weight: 90, source: 'lastfm' },
+      { tag: 'pop', weight: 50, source: 'other' },
+      { tag: 'dance', weight: 40, source: 'lastfm' },
+    ],
+  });
+
+  /** Opens the Columns menu once and toggles each named column. */
+  async function pick(...labels: string[]) {
+    await userEvent.click(screen.getByText('Columns'));
+    for (const label of labels) {
+      await userEvent.click(screen.getByRole('checkbox', { name: label }));
+    }
+  }
+
+  it('hides the extra columns by default', () => {
+    setup({ tracks: [rich] });
+    expect(within(rowFor('Track 1')).queryByText('0.11')).toBeNull();
+    expect(within(rowFor('Track 1')).queryByText('2026-03-04')).toBeNull();
+  });
+
+  it('lets you add feature columns, tags, date added and status', async () => {
+    setup({ tracks: [rich] });
+    await pick('Valence', 'Danceability', 'Loudness', 'Tags', 'Added', 'Status');
+
+    const row = within(rowFor('Track 1'));
+    expect(row.queryByText('0.11')).not.toBeNull();
+    expect(row.queryByText('0.22')).not.toBeNull();
+    expect(row.queryByText('-7.5 dB')).not.toBeNull();
+    expect(row.queryByText('2026-03-04')).not.toBeNull();
+    expect(row.queryByText('Organized')).not.toBeNull();
+    expect(row.getAllByText('pop')).toHaveLength(1); // de-duplicated across sources
+    expect(row.queryByText('dance')).not.toBeNull();
+  });
+
+  it('can hide a default column, and remembers the choice', async () => {
+    const first = setup({ tracks: [rich] });
+    expect(within(rowFor('Track 1')).queryByText('Alb')).not.toBeNull();
+    await pick('Album');
+    expect(within(rowFor('Track 1')).queryByText('Alb')).toBeNull();
+    first.unmount();
+
+    setup({ tracks: [rich] });
+    expect(within(rowFor('Track 1')).queryByText('Alb')).toBeNull();
+  });
+
+  it('falls back to the defaults when the stored choice is unreadable', () => {
+    window.localStorage.setItem('listify.columns', '{not json');
+    setup({ tracks: [rich] });
+    expect(within(rowFor('Track 1')).queryByText('Alb')).not.toBeNull();
+  });
+
+  it('sorts by duration and by date added', async () => {
+    const tracks = [
+      track(1, { name: 'A', durationMs: 100000, addedAt: '2026-01-01T00:00:00Z' }),
+      track(2, { name: 'B', durationMs: 300000, addedAt: '2025-01-01T00:00:00Z' }),
+      track(3, { name: 'C' }),
+    ];
+    setup({ tracks });
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), 'Time');
+    expect(rowNames()).toEqual(['B', 'A', 'C']);
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), 'Date added');
+    expect(rowNames()).toEqual(['A', 'B', 'C']);
+  });
+});
+
+describe('CenterTable details', () => {
+  it('shows cover art when a song has it, and a placeholder otherwise', () => {
+    const { container } = setup({
+      tracks: [track(1, { imageUrl: 'http://img/1.jpg' }), track(2)],
+    });
+    expect(container.querySelectorAll('img')).toHaveLength(1);
+    expect(within(rowFor('Track 2')).queryByText('🎵')).not.toBeNull();
+  });
+
+  it('keeps tracks without the sorted feature together at the end', async () => {
+    setup({ tracks: [track(1), track(2), track(3, { features: { energy: 0.4 } })] });
+    await userEvent.selectOptions(screen.getByLabelText('Sort'), 'Energy');
+    expect(rowNames()).toEqual(['Track 3', 'Track 1', 'Track 2']);
+  });
+
+  it('closes the Columns menu on an outside click and on Escape, but not on a click inside', async () => {
+    setup();
+    const menu = screen.getByText('Columns').closest('details') as HTMLDetailsElement;
+
+    await userEvent.click(screen.getByText('Columns'));
+    expect(menu.open).toBe(true);
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Album' }));
+    expect(menu.open).toBe(true);
+
+    await userEvent.click(document.body);
+    expect(menu.open).toBe(false);
+
+    await userEvent.click(screen.getByText('Columns'));
+    expect(menu.open).toBe(true);
+    await userEvent.keyboard('{Escape}');
+    expect(menu.open).toBe(false);
   });
 });
