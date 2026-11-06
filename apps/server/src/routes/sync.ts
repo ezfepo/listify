@@ -2,18 +2,25 @@ import type { FastifyInstance } from 'fastify';
 import { triggerEnrichment } from '../enrich/queue.js';
 import { SpotifyAuthError, SpotifyRateLimitError } from '../spotify/errors.js';
 import { apply, ApplySetupError, previewDiff } from '../sync/apply.js';
-import { pull, PullSetupError } from '../sync/pull.js';
+import { withSyncLock } from '../sync/lock.js';
+import { pull, PullBlockedError, PullSetupError } from '../sync/pull.js';
 
 export async function syncRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/api/sync/pull', async (_req, reply) => {
+  app.post('/api/sync/pull', async (req, reply) => {
+    const force = (req.query as { force?: string }).force === 'true';
     try {
-      const summary = await pull();
+      const summary = await withSyncLock('pull', () => pull({ discardLocalChanges: force }));
       // Fire-and-forget: enrichment runs in the background and must never delay this response.
       triggerEnrichment((err) => app.log.error(err, 'enrichment queue failed'));
       return summary;
     } catch (err) {
       if (err instanceof SpotifyAuthError) {
         return reply.code(401).send({ error: err.reason });
+      }
+      if (err instanceof PullBlockedError) {
+        return reply
+          .code(409)
+          .send({ error: 'pending_local_changes', message: err.message, pending: err.pending });
       }
       if (err instanceof PullSetupError) {
         return reply.code(409).send({ error: 'setup_required', message: err.message });
@@ -45,7 +52,7 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/sync/apply', async (_req, reply) => {
     try {
-      return await apply();
+      return await withSyncLock('apply', () => apply());
     } catch (err) {
       if (err instanceof SpotifyAuthError) {
         return reply.code(401).send({ error: err.reason });

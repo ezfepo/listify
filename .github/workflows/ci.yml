@@ -20,7 +20,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
-      - run: npm test -w apps/server
+      # Server tests run with coverage; fails below the thresholds in apps/server/vitest.config.ts.
+      - run: npm run coverage -w apps/server
       # Web tests run with coverage; fails below the thresholds in apps/web/vite.config.ts.
       - run: npm run coverage -w apps/web
       - run: npm run build

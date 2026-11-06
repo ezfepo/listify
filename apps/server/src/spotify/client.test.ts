@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SpotifyHttpError, SpotifyRateLimitError } from './errors.js';
 import {
+  addItemsToPlaylist,
+  createPlaylist,
   getMe,
   getMyPlaylists,
   getPlaylistItems,
   getSavedTracks,
   getSavedTracksTotal,
   playTrack,
+  removeItemsFromPlaylist,
+  removeSavedTracks,
 } from './client.js';
 
 const fetchMock = vi.fn();
@@ -188,5 +192,65 @@ describe('playTrack', () => {
     const err = await playTrack('tok', 'spotify:track:1').catch((e) => e);
     expect(err).toBeInstanceOf(SpotifyHttpError);
     expect(err.status).toBe(404);
+  });
+});
+
+describe('write endpoints', () => {
+  function lastCall(): { url: string; method: string; body: unknown } {
+    const [url, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    return {
+      url,
+      method: init.method as string,
+      body: init.body ? JSON.parse(init.body as string) : undefined,
+    };
+  }
+
+  it('createPlaylist POSTs to /me/playlists as a private playlist and returns the id', async () => {
+    fetchMock.mockResolvedValue(json({ id: 'new1' }, { status: 201 }));
+
+    await expect(createPlaylist('tok', 'Sad')).resolves.toEqual({ id: 'new1' });
+    expect(lastCall()).toEqual({
+      url: 'https://api.spotify.com/v1/me/playlists',
+      method: 'POST',
+      body: { name: 'Sad', public: false },
+    });
+  });
+
+  it('addItemsToPlaylist POSTs { uris } to /playlists/{id}/items', async () => {
+    fetchMock.mockResolvedValue(json({ snapshot_id: 's' }, { status: 201 }));
+
+    await addItemsToPlaylist('tok', 'pl', ['spotify:track:1']);
+    expect(lastCall()).toEqual({
+      url: 'https://api.spotify.com/v1/playlists/pl/items',
+      method: 'POST',
+      body: { uris: ['spotify:track:1'] },
+    });
+  });
+
+  it('removeItemsFromPlaylist DELETEs with an `items` body (not `tracks`)', async () => {
+    fetchMock.mockResolvedValue(json({ snapshot_id: 's' }));
+
+    await removeItemsFromPlaylist('tok', 'pl', ['spotify:track:1']);
+    expect(lastCall()).toEqual({
+      url: 'https://api.spotify.com/v1/playlists/pl/items',
+      method: 'DELETE',
+      body: { items: [{ uri: 'spotify:track:1' }] },
+    });
+  });
+
+  it('removeSavedTracks DELETEs /me/library with comma-joined URIs', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+
+    await removeSavedTracks('tok', ['spotify:track:1', 'spotify:track:2']);
+    const call = lastCall();
+    expect(call.method).toBe('DELETE');
+    expect(decodeURIComponent(call.url)).toBe(
+      'https://api.spotify.com/v1/me/library?uris=spotify:track:1,spotify:track:2',
+    );
+  });
+
+  it('surfaces a failed write as SpotifyHttpError', async () => {
+    fetchMock.mockResolvedValue(new Response('boom', { status: 500 }));
+    await expect(addItemsToPlaylist('tok', 'pl', ['x'])).rejects.toBeInstanceOf(SpotifyHttpError);
   });
 });

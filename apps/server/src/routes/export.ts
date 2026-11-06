@@ -5,6 +5,7 @@ import {
   importDatabaseSnapshot,
   type DatabaseSnapshot,
 } from '../db/export.js';
+import { SyncBusyError, withSyncLock } from '../sync/lock.js';
 
 const snapshotSchema = z.object({
   version: z.literal(1),
@@ -30,8 +31,9 @@ export async function exportRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: 'invalid_body', details: body.error.issues });
     }
     try {
-      importDatabaseSnapshot(body.data as DatabaseSnapshot);
+      await withSyncLock('import', () => importDatabaseSnapshot(body.data as DatabaseSnapshot));
     } catch (err) {
+      if (err instanceof SyncBusyError) throw err; // -> 409 via the app error handler
       const message = err instanceof Error ? err.message : String(err);
       return reply.code(400).send({ error: 'import_failed', message });
     }

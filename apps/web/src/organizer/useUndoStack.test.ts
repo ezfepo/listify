@@ -94,3 +94,21 @@ describe('useUndoStack history', () => {
     expect(result.current.history.map((h) => h.label)).toEqual(['a']);
   });
 });
+
+describe('useUndoStack clear', () => {
+  it('forgets every entry without running any undo', async () => {
+    const undo = vi.fn(async () => {});
+    const { result } = renderHook(() => useUndoStack());
+    act(() => {
+      result.current.push({ label: 'a', undo });
+      result.current.push({ label: 'b', undo });
+    });
+
+    act(() => result.current.clear());
+
+    expect(result.current.history).toEqual([]);
+    expect(result.current.canUndo).toBe(false);
+    await act(() => result.current.undo());
+    expect(undo).not.toHaveBeenCalled();
+  });
+});

@@ -324,6 +324,55 @@ describe('App: Setup and Pull', () => {
     expect(pullHandler).toHaveBeenCalledTimes(1);
   });
 
+  it('asks before discarding unapplied local assignments, and pulls anyway on request', async () => {
+    const pulls: string[] = [];
+    routeFetch({
+      ...connectedRoutes,
+      'POST /api/setup': () => jsonResponse({ status: 'ok' }),
+      'POST /api/sync/pull': () => {
+        pulls.push('first');
+        return jsonResponse(
+          {
+            error: 'pending_local_changes',
+            message: 'Pull would discard 3 local assignment(s).',
+            pending: [
+              { playlistId: 1, name: 'Road', count: 2 },
+              { playlistId: 2, name: 'Gym', count: 1 },
+            ],
+          },
+          409,
+        );
+      },
+      'POST /api/sync/pull?force=true': () => {
+        pulls.push('forced');
+        return jsonResponse({
+          mainTrackCount: 1,
+          archiveTrackCount: 0,
+          subPlaylists: [],
+          skippedEpisodes: 0,
+        });
+      },
+    });
+    render(<App />);
+    await screen.findByText('Connected as Ada');
+    const [mainSelect, archiveSelect] = await screen.findAllByRole('combobox');
+    await userEvent.selectOptions(mainSelect!, 'pl1');
+    await userEvent.selectOptions(archiveSelect!, 'pl2');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pull' }));
+
+    await screen.findByText('Pull would discard 3 local assignment(s).');
+    expect(pulls).toEqual(['first']);
+    expect(screen.queryByText('ORGANIZER VIEW')).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Pull anyway \(discard 3 local assignments\)/ }),
+    );
+
+    await screen.findByText('ORGANIZER VIEW');
+    expect(pulls).toEqual(['first', 'forced']);
+  });
+
   it('surfaces the server message when the pull fails (e.g. setup required)', async () => {
     await renderSetup({
       'GET /api/setup': () => jsonResponse({ mainSpotifyId: 'pl1', archiveSpotifyId: 'pl2' }),
