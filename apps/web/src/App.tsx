@@ -18,13 +18,6 @@ type PlaylistOption = {
   trackCount: number;
 };
 
-type PullSummary = {
-  mainTrackCount: number;
-  archiveTrackCount: number;
-  subPlaylists: { name: string; trackCount: number }[];
-  skippedEpisodes: number;
-};
-
 function readAuthError(): string | null {
   const params = new URLSearchParams(window.location.search);
   const error = params.get('auth_error');
@@ -45,7 +38,6 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
   const [mainId, setMainId] = useState('');
   const [archiveId, setArchiveId] = useState('');
   const [saved, setSaved] = useState(false);
-  const [pullResult, setPullResult] = useState<PullSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -83,12 +75,10 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
   async function runPull() {
     setBusy(true);
     setError(null);
-    setPullResult(null);
     try {
       const res = await fetch('/api/sync/pull', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
-      setPullResult(data);
       onPulled();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -152,20 +142,6 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
         </button>
       </div>
       {error && <p className="text-danger">{error}</p>}
-      {pullResult && (
-        <div className="text-done">
-          <p>Main: {pullResult.mainTrackCount} tracks</p>
-          <p>Archive: {pullResult.archiveTrackCount} tracks</p>
-          {pullResult.subPlaylists.map((s) => (
-            <p key={s.name}>
-              {s.name}: {s.trackCount} tracks
-            </p>
-          ))}
-          {pullResult.skippedEpisodes > 0 && (
-            <p className="text-muted">Skipped {pullResult.skippedEpisodes} episode(s)</p>
-          )}
-        </div>
-      )}
     </div>
   );
 }
