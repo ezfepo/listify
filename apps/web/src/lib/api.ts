@@ -1,3 +1,5 @@
+import { trackedFetch } from './serverEvents';
+
 export type FeatureKey =
   | 'valence'
   | 'energy'
@@ -109,7 +111,7 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await trackedFetch(path, {
     ...init,
     headers: init?.body ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
   });

@@ -338,9 +338,104 @@ no new dependencies unless a step below says so.
   features, tags, date added, status) and remembers the choice in localStorage. IBM Plex is self-hosted (`apps/web/public/fonts`, SIL OFL licence included), so the
   app makes no external requests. Colour token for text is `ink`.
 
-- **Checkpoint:** human triages real songs in both views over a session and
-  reports friction; fix it. `sync-safety-reviewer` is not needed (no sync
-  changes), but confirm the Sync tab and Diff Preview still work. Commit.
+- **Checkpoint:** done. Human triaged real songs in both views and reviewed the
+  UI; the Sync tab and Diff Preview still work. Merged in #33.
+
+### Phase 5c — Concurrency hardening (several tabs / browsers)
+
+PR #34. Same server, several clients: nothing here changes what is written to Spotify,
+only prevents two clients from interleaving or acting on stale data.
+
+- [x] `sync/lock.ts`: one sync-level operation at a time (`pull`, `apply`,
+  `import`, `setup` change). A second caller gets `409 sync_in_progress`
+  immediately (not queued); the lock is released on success and on error.
+- [x] `pull` reads everything from Spotify first, then checks and writes in one
+  synchronous stretch. If it would overwrite local assignments to an adopted
+  playlist that Spotify doesn't have yet, it writes nothing and returns
+  `409 pending_local_changes` (counts per playlist). `?force=true` discards them;
+  Setup shows "Pull anyway (discard N local assignments)". (While `DRY_RUN` is on,
+  `apply` never clears those assignments, hence the explicit override.)
+- Known limit: the pull check sees local *additions* missing on Spotify, not a
+  local *removal* of something Spotify still has (no last-synced baseline is
+  stored), so such a removal is re-added by pull. Fixing it needs a baseline.
+- [x] Revision counter bumped by every successful mutation, returned in the
+  `x-listify-revision` header and streamed on `GET /api/events` (SSE;
+  `GET /api/revision` for polling). Works across tabs *and* browsers.
+- [x] Web: `ServerSync` refreshes all queries on any change; a change the client
+  didn't make clears the undo history (with a toast) and re-checks the Spotify
+  connection.
+- [x] Tests for the lock, pull blocking, revision/SSE and the client logic;
+  `sync-safety-reviewer` run on the diff.
+- [x] Web test coverage: `@vitest/coverage-v8` as a dev dependency of
+  `apps/web`, `npm run coverage -w apps/web`, and a CI gate (thresholds in
+  `apps/web/vite.config.ts`: statements/lines/functions 95, branches 85; CI runs
+  the server tests plainly and the web tests through `coverage`). Already on
+  `master`: it shipped with #33, so nothing is left to do here.
+- [x] Server coverage, same as the web: add `@vitest/coverage-v8` to
+  `apps/server`, a `coverage` script, `coverage.include` over `src/**` (so files
+  no test imports still count), and measure the current numbers first. Close
+  the gaps that matter (`sync/`, `spotify/`, routes), then set thresholds just
+  below the measured values and make CI run the server tests through
+  `npm run coverage -w apps/server`, so the gate fails on regressions like the
+  web one.
+
+- **Checkpoint:** human opens two browsers, organizes in one and watches the
+  other refresh; clicks Apply in both at once and sees the second refused.
+
+### Phase 5d — Multiple Spotify accounts
+
+Today the app assumes one Spotify user: one token set, one Main/Archive pair,
+one library. Goal: connect several accounts and organize each one's Main into
+its own playlists, switching between them in the UI. Do this **before Phase 6**:
+changing the schema is much cheaper before the first real `apply`.
+
+Decisions to confirm with the human before coding (record the answers here):
+
+- Whose accounts? (the same person's several accounts vs. other people's) — it
+  decides whether a song's classification is ever shared across accounts.
+- Does anything cross accounts? Default proposal: only the **track metadata,
+  audio features and tags** are shared (one cache keyed by URI); statuses,
+  playlists, assignments and recipes are strictly per account.
+- Check Spotify's current rules for apps in development mode (allow-listed
+  users, Premium requirement per user) against the live docs, per CLAUDE.md,
+  before promising that N accounts can connect.
+
+Steps:
+
+- [ ] Data model: an `accounts` table (Spotify user id, display name, token set,
+  created at). Per-account state moves under an `account_id`: Main/Archive
+  settings, playlists, `playlist_tracks`, track status and `in_main` /
+  `in_archive`, the `operations` log and the recipes. Track metadata, features,
+  tags and enrichment status stay global.
+- [ ] Migration of the existing single-account database: the current rows are
+  assigned to the account created on the next login; a backup snapshot is
+  written first; the migration is idempotent and tested on a copy of a populated
+  DB. Snapshot export/import gets a new version that carries the accounts
+  (never the tokens).
+- [ ] Auth: "Add account" starts the PKCE flow again without dropping the
+  existing ones; the callback maps the returned Spotify user to an account row;
+  disconnecting removes one account's tokens only; token refresh and the
+  "Reconnect" error are per account.
+- [ ] Active account: the web app sends it explicitly with every `/api/*`
+  request (a header), so two tabs/browsers can work on different accounts at
+  once; the server never falls back to an implicit global "current" account.
+  Header shows an account switcher and "Connected as …" for the active one.
+- [ ] Sync engine takes an explicit account: `pull(accountId)`,
+  `diff`/`apply(accountId)`. **Safety invariant:** `apply` only ever uses that
+  account's token on that account's playlists; add tests that two accounts with
+  overlapping songs never read or write each other's rows. The 5c lock becomes
+  per account (a long apply on one must not block the other), and the revision
+  / SSE stream carries the account so a change in one account doesn't refresh
+  or clear undo for another.
+- [ ] Setup, Organize, Triage and Sync all follow the active account; switching
+  accounts resets the view state (selection, focused song, undo history).
+- [ ] Tests: migration, isolation between accounts, per-account lock and
+  revision, auth callback for a new and an already-known user, account switcher.
+  Run `sync-safety-reviewer` on the whole diff.
+
+- **Checkpoint:** human connects a second account, organizes a few songs in each,
+  runs a dry-run Apply for both and checks the logs touch only their own
+  playlists. Commit.
 
 ### Phase 6 — Go live, carefully
 

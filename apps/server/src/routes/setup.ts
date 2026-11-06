@@ -1,3 +1,4 @@
+import { withSyncLock } from '../sync/lock.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { upsertPlaylist } from '../db/playlists.js';
@@ -73,12 +74,15 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    setSetting('main_playlist_spotify_id', mainSpotifyId);
-    setSetting('archive_playlist_spotify_id', archiveSpotifyId);
+    // Changing Main/Archive mid-pull or mid-apply would send that operation to the wrong playlists.
+    await withSyncLock('setup', () => {
+      setSetting('main_playlist_spotify_id', mainSpotifyId);
+      setSetting('archive_playlist_spotify_id', archiveSpotifyId);
 
-    for (const playlist of adopt) {
-      upsertPlaylist(playlist.spotifyId, playlist.name, 'sub');
-    }
+      for (const playlist of adopt) {
+        upsertPlaylist(playlist.spotifyId, playlist.name, 'sub');
+      }
+    });
 
     return { status: 'ok' };
   });

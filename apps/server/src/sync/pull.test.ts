@@ -121,10 +121,10 @@ vi.mock('../spotify/client.js', () => ({
 
 const { db } = await import('../db/index.js');
 const { setSetting } = await import('../db/settings.js');
-const { assignTrackToPlaylist, getPlaylistBySpotifyId, upsertPlaylist } =
+const { assignTrackToPlaylist, createSubPlaylist, getPlaylistBySpotifyId, upsertPlaylist } =
   await import('../db/playlists.js');
 const { getTrackStatus, setTrackStatus, upsertTrack } = await import('../db/tracks.js');
-const { pull, PullSetupError } = await import('./pull.js');
+const { pull, PullBlockedError, PullSetupError } = await import('./pull.js');
 const { getPlaylistItems } = await import('../spotify/client.js');
 const { LIKED_SONGS_SENTINEL } = await import('../spotify/liked-songs.js');
 
@@ -191,9 +191,86 @@ describe('pull', () => {
     assignTrackToPlaylist(road.id, 'spotify:track:99');
     setTrackStatus('spotify:track:99', 'organized');
 
-    await pull();
+    await pull({ discardLocalChanges: true });
 
     expect(getTrackStatus('spotify:track:99')).toBe('inbox');
+  });
+
+  describe('local assignments that are not on Spotify yet', () => {
+    async function setupWithLocalOnlyPick() {
+      setSetting('main_playlist_spotify_id', 'main123');
+      setSetting('archive_playlist_spotify_id', 'archive456');
+      upsertPlaylist('sub789', 'Road', 'sub');
+      await pull();
+      upsertTrack(
+        {
+          uri: 'spotify:track:99',
+          name: 'Local-only pick',
+          artists: 'A',
+          album: null,
+          imageUrl: null,
+          durationMs: null,
+          addedAt: null,
+          isLocal: false,
+          isrc: null,
+        },
+        'inbox',
+      );
+      const road = getPlaylistBySpotifyId('sub789')!;
+      assignTrackToPlaylist(road.id, 'spotify:track:99');
+      setTrackStatus('spotify:track:99', 'organized');
+      return road;
+    }
+
+    it('blocks the pull, reporting how many assignments per playlist would be lost', async () => {
+      const road = await setupWithLocalOnlyPick();
+
+      const error = await pull().catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(PullBlockedError);
+      expect((error as InstanceType<typeof PullBlockedError>).pending).toEqual([
+        { playlistId: road.id, name: 'Road', count: 1 },
+      ]);
+    });
+
+    it('writes nothing when blocked', async () => {
+      const road = await setupWithLocalOnlyPick();
+      const before = db.prepare('SELECT COUNT(*) AS n FROM playlist_tracks').get() as { n: number };
+
+      await expect(pull()).rejects.toBeInstanceOf(PullBlockedError);
+
+      const after = db.prepare('SELECT COUNT(*) AS n FROM playlist_tracks').get() as { n: number };
+      expect(after.n).toBe(before.n);
+      expect(getTrackStatus('spotify:track:99')).toBe('organized');
+      const assigned = db
+        .prepare('SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_uri = ?')
+        .get(road.id, 'spotify:track:99');
+      expect(assigned).toBeTruthy();
+    });
+
+    it('proceeds, discarding them, when explicitly told to', async () => {
+      const road = await setupWithLocalOnlyPick();
+
+      await pull({ discardLocalChanges: true });
+
+      const assigned = db
+        .prepare('SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_uri = ?')
+        .get(road.id, 'spotify:track:99');
+      expect(assigned).toBeUndefined();
+    });
+
+    it('does not block when local and Spotify agree, or when the playlist is not adopted yet', async () => {
+      setSetting('main_playlist_spotify_id', 'main123');
+      setSetting('archive_playlist_spotify_id', 'archive456');
+      upsertPlaylist('sub789', 'Road', 'sub');
+      await pull();
+      await expect(pull()).resolves.toBeDefined(); // nothing local-only
+
+      // A brand-new local playlist has no spotify_id: its assignments are not pull's business.
+      const fresh = createSubPlaylist({ name: 'Fresh' });
+      assignTrackToPlaylist(fresh.id, 'spotify:track:1');
+      await expect(pull()).resolves.toBeDefined();
+    });
   });
 
   it('gives new Main tracks inbox status and Archive-only tracks organized status', async () => {

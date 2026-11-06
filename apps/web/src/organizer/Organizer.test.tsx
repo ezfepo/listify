@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, ApiError, type LibraryResponse, type PlaylistView, type TrackView } from '../lib/api';
+import { connectServerEvents, resetServerEvents } from '../lib/serverEvents';
 import { Organizer, type WorkspaceMode } from './Organizer';
 import { UndoIndicatorDisplay, UndoIndicatorProvider } from './UndoIndicator';
 
@@ -933,5 +934,54 @@ describe('Organizer: remaining paths', () => {
     await loaded();
     await userEvent.keyboard('{Control>}t{/Control}');
     expect(screen.queryByPlaceholderText(/Search name or artist/)).not.toBeNull();
+  });
+});
+
+describe('Organizer: changes made from another window', () => {
+  const source: { handler: ((event: { data: string }) => void) | null } = { handler: null };
+  const send = (revision: number) =>
+    (source.handler as ((event: { data: string }) => void) | null)?.({
+      data: JSON.stringify({ revision }),
+    });
+  let stop: () => void = () => {};
+
+  beforeEach(() => {
+    resetServerEvents();
+    source.handler = null;
+    class FakeSource {
+      set onmessage(fn: (event: { data: string }) => void) {
+        source.handler = fn;
+      }
+      close() {}
+    }
+    vi.stubGlobal('EventSource', FakeSource);
+    stop = connectServerEvents(() => {});
+    send(1); // baseline
+  });
+
+  afterEach(() => {
+    stop();
+    vi.unstubAllGlobals();
+  });
+
+  it('clears the undo history and says why, so undo cannot overwrite the other change', async () => {
+    renderOrganizer();
+    await loaded();
+    await userEvent.selectOptions(within(tableRow('Track 1')).getByRole('combobox'), 'Gym');
+    await screen.findByText(/Last action: Assign to Gym/);
+
+    act(() => send(2));
+
+    await screen.findByText(/Changed from another window/);
+    await waitFor(() => expect(screen.queryByText(/Last action/)).toBeNull());
+    await userEvent.keyboard('u');
+    expect(mocked.unassignTrack).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet when there was nothing to undo anyway', async () => {
+    renderOrganizer();
+    await loaded();
+    act(() => send(2));
+    expect(screen.queryByText(/Changed from another window/)).toBeNull();
   });
 });

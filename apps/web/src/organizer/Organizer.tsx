@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { onExternalChange } from '../lib/serverEvents';
 import { api, ApiError, type PlaylistView, type TrackStatus } from '../lib/api';
 import { AutoSortPanel } from './AutoSortPanel';
 import { CenterTable } from './CenterTable';
@@ -35,7 +36,7 @@ interface OrganizerProps {
  */
 export function Organizer({ mode, onModeChange }: OrganizerProps) {
   const queryClient = useQueryClient();
-  const { push: pushUndo, undo, topLabel, history } = useUndoStack();
+  const { push: pushUndo, undo, clear: clearUndo, topLabel, history } = useUndoStack();
   const { setTopLabel } = useUndoIndicator();
 
   useEffect(() => setTopLabel(topLabel), [topLabel, setTopLabel]);
@@ -107,6 +108,20 @@ export function Organizer({ mode, onModeChange }: OrganizerProps) {
     setToast(message);
     setTimeout(() => setToast((t) => (t === message ? null : t)), 3000);
   }, []);
+
+  // Someone else (another tab or browser) changed data: what "undo" would restore may be
+  // out of date, so drop the history rather than let it overwrite their change.
+  const hasHistoryRef = useRef(false);
+  hasHistoryRef.current = history.length > 0;
+  useEffect(
+    () =>
+      onExternalChange(() => {
+        if (!hasHistoryRef.current) return;
+        clearUndo();
+        showToast('Changed from another window — undo history cleared.');
+      }),
+    [clearUndo, showToast],
+  );
 
   const reportError = useCallback(
     (err: unknown) => showToast(err instanceof ApiError ? err.message : 'Something went wrong'),

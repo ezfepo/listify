@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { onExternalChange, trackedFetch } from './lib/serverEvents';
 import { Organizer, type WorkspaceMode } from './organizer/Organizer';
 import { SyncPanel } from './organizer/SyncPanel';
 import { UndoIndicatorDisplay, UndoIndicatorProvider } from './organizer/UndoIndicator';
@@ -40,6 +41,7 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [blockedPull, setBlockedPull] = useState<{ message: string; count: number } | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -58,7 +60,7 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch('/api/setup', {
+      const res = await trackedFetch('/api/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mainSpotifyId: mainId, archiveSpotifyId: archiveId, adopt: [] }),
@@ -72,12 +74,21 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
     }
   }
 
-  async function runPull() {
+  async function runPull(force = false) {
     setBusy(true);
     setError(null);
+    setBlockedPull(null);
     try {
-      const res = await fetch('/api/sync/pull', { method: 'POST' });
+      const res = await trackedFetch(force ? '/api/sync/pull?force=true' : '/api/sync/pull', {
+        method: 'POST',
+      });
       const data = await res.json();
+      if (res.status === 409 && data.error === 'pending_local_changes') {
+        // Unapplied local assignments would be lost: ask before overwriting them.
+        const count = (data.pending as { count: number }[]).reduce((sum, p) => sum + p.count, 0);
+        setBlockedPull({ message: data.message, count });
+        return;
+      }
       if (!res.ok) throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
       onPulled();
     } catch (err) {
@@ -135,13 +146,26 @@ function SetupAndPull({ onPulled }: { onPulled: () => void }) {
         </button>
         <button
           disabled={!saved || busy}
-          onClick={runPull}
+          onClick={() => runPull()}
           className="rounded bg-accent text-white px-3 py-1 disabled:opacity-40"
         >
           Pull
         </button>
       </div>
       {error && <p className="text-danger">{error}</p>}
+      {blockedPull && (
+        <div className="space-y-2 rounded border border-line bg-surface p-3">
+          <p className="text-danger">{blockedPull.message}</p>
+          <button
+            onClick={() => runPull(true)}
+            disabled={busy}
+            className="rounded bg-danger px-3 py-1 text-white disabled:opacity-40"
+          >
+            Pull anyway (discard {blockedPull.count} local assignment
+            {blockedPull.count === 1 ? '' : 's'})
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -171,7 +195,7 @@ export default function App() {
       );
   }, []);
 
-  useEffect(() => {
+  const loadMe = useCallback(() => {
     fetch('/api/me')
       .then(async (res) => {
         if (res.status === 401) {
@@ -187,10 +211,14 @@ export default function App() {
       );
   }, []);
 
+  useEffect(() => loadMe(), [loadMe]);
+  // Another tab/browser may have connected or disconnected Spotify: re-check who we are.
+  useEffect(() => onExternalChange(loadMe), [loadMe]);
+
   async function disconnect() {
     setDisconnecting(true);
     try {
-      const res = await fetch('/auth/disconnect', { method: 'POST' });
+      const res = await trackedFetch('/auth/disconnect', { method: 'POST' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setMe({ status: 'disconnected' });
     } catch (err) {

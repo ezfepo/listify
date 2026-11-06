@@ -298,6 +298,88 @@ describe('apply', () => {
     expect(client.removeItemsFromPlaylist).not.toHaveBeenCalled();
   });
 
+  describe('real-run failure paths', () => {
+    function seedOrganized(uris: string[]): void {
+      mockConfig.dryRun = false;
+      setSetting('main_playlist_spotify_id', 'main123');
+      setSetting('archive_playlist_spotify_id', 'archive456');
+      for (const uri of uris) {
+        upsertTrack(
+          {
+            uri,
+            name: 'T',
+            artists: 'A',
+            album: null,
+            imageUrl: null,
+            durationMs: 1000,
+            addedAt: null,
+            isLocal: false,
+            isrc: null,
+          },
+          'inbox',
+        );
+        setTrackStatus(uri, 'organized');
+      }
+    }
+
+    it('reports addToArchive as failed and removes nothing from Main when the Archive add throws', async () => {
+      seedOrganized(['spotify:track:1']);
+      vi.mocked(client.getPlaylistItems).mockImplementation(async (_t, playlistId) =>
+        playlistId === 'main123' ? [trackEntry('spotify:track:1', '1')] : [],
+      );
+      vi.mocked(client.addItemsToPlaylist).mockRejectedValue(new Error('Spotify 500'));
+
+      const summary = await apply();
+
+      const addOp = summary.operations.find((o) => o.operation.kind === 'addToArchive');
+      expect(addOp?.status).toBe('failed');
+      expect(addOp?.error).toBe('Spotify 500');
+      expect(client.removeItemsFromPlaylist).not.toHaveBeenCalled();
+      expect(client.removeSavedTracks).not.toHaveBeenCalled();
+    });
+
+    it('removes only the verified URIs and reports the unverified ones as failed', async () => {
+      seedOrganized(['spotify:track:1', 'spotify:track:2']);
+      vi.mocked(client.getPlaylistItems).mockImplementation(async (_t, playlistId) => {
+        if (playlistId === 'main123') {
+          return [trackEntry('spotify:track:1', '1'), trackEntry('spotify:track:2', '2')];
+        }
+        // Archive only ever contains track 1, even after the add.
+        return playlistId === 'archive456' ? [trackEntry('spotify:track:1', '1')] : [];
+      });
+
+      const summary = await apply();
+
+      expect(client.removeItemsFromPlaylist).toHaveBeenCalledTimes(1);
+      expect(client.removeItemsFromPlaylist).toHaveBeenCalledWith('fake-token', 'main123', [
+        'spotify:track:1',
+      ]);
+      const done = summary.operations.find(
+        (o) => o.operation.kind === 'removeFromMain' && o.status === 'done',
+      );
+      const failed = summary.operations.find(
+        (o) => o.operation.kind === 'removeFromMain' && o.status === 'failed',
+      );
+      expect(done?.operation).toMatchObject({ uris: ['spotify:track:1'] });
+      expect(failed?.operation).toMatchObject({ uris: ['spotify:track:2'] });
+      expect(failed?.error).toMatch(/not verified present in Archive/);
+    });
+
+    it('reports removeFromMain as failed when the Main removal call throws', async () => {
+      seedOrganized(['spotify:track:1']);
+      // Track is in both Main and Archive, so the Archive copy verifies and removal is attempted.
+      vi.mocked(client.getPlaylistItems).mockResolvedValue([trackEntry('spotify:track:1', '1')]);
+      vi.mocked(client.removeItemsFromPlaylist).mockRejectedValue(new Error('Spotify 503'));
+
+      const summary = await apply();
+
+      const removeOp = summary.operations.find(
+        (o) => o.operation.kind === 'removeFromMain' && o.status === 'failed',
+      );
+      expect(removeOp?.error).toBe('Spotify 503');
+    });
+  });
+
   it('excludes local tracks from being organized/removed and reports them as skipped', async () => {
     mockConfig.dryRun = false;
     setSetting('main_playlist_spotify_id', 'main123');

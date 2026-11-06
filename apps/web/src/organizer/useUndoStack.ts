@@ -42,8 +42,14 @@ export function useUndoStack() {
     await entry.undo();
   }, [sync]);
 
+  /** Forget everything: the recorded states may no longer match what the server has. */
+  const clear = useCallback(() => {
+    stackRef.current = [];
+    sync();
+  }, [sync]);
+
   const topLabel = history[history.length - 1]?.label ?? null;
 
   // `history` is oldest-first; the session-history column is the same store.
-  return { push, undo, canUndo: topLabel !== null, topLabel, history };
+  return { push, undo, clear, canUndo: topLabel !== null, topLabel, history };
 }
